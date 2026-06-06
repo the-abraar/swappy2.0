@@ -7,6 +7,8 @@ chunk and frees one outgoing chunk. Both drives only ever need
 `chunk_size` bytes of headroom. The transfer loop calls this repeatedly,
 re-consulting the scheduler between rounds — as soon as enough space has
 been freed for a normal whole-file copy, the fast path takes over again.
+Rounds are always serialized: the coordinator only calls this when no
+whole-file workers are in flight.
 
 How one file is transferred (1x I/O — every byte read once, written once):
 
@@ -34,11 +36,12 @@ from __future__ import annotations
 
 import hashlib
 import os
-from dataclasses import replace
+import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from . import winfs
-from .db import Database, Entry, Session
+from . import progress, winfs
+from .db import Database, Entry, ProgressFileHistory, Session
 from .preflight import FreeBytes
 
 _IO_BLOCK = 8 * 1024 * 1024
@@ -48,15 +51,58 @@ class SparseTransferError(RuntimeError):
     pass
 
 
-def advance_round(db: Database, session: Session, free_bytes: FreeBytes) -> None:
+@dataclass
+class _SparseStats:
+    started_at: float
+    chunk_seconds: float = 0.0
+
+
+_SPARSE_STATS: dict[int, _SparseStats] = {}
+
+
+def reset_progress_state() -> None:
+    _SPARSE_STATS.clear()
+
+
+def advance_round(
+    db: Database,
+    session: Session,
+    free_bytes: FreeBytes,
+    *,
+    worker_id: int = 1,
+) -> None:
     """Move one chunk in each direction. Called only when whole-file copy
     is deadlocked, so at least one side must have files left to move."""
     progressed = False
-    for side in ("A", "B"):
-        entry = _current_transfer(db, side)
-        if entry is not None:
-            _advance_one_chunk(db, session, entry, free_bytes)
+    entries = [
+        entry
+        for side in ("A", "B")
+        for entry in [_current_transfer(db, side)]
+        if entry is not None
+    ]
+    if not entries:
+        raise SparseTransferError("sparse engine called with nothing to transfer")
+
+    for index, entry in enumerate(entries):
+        moved_bytes, total_bytes_copied, chunk_seconds, history = _advance_one_chunk(
+            db, session, entry, free_bytes, worker_id=worker_id
+        )
+        # A finished file (history) is progress even with zero bytes moved
+        # this round: zero-byte files and crash recovery (source gone,
+        # destination already complete) finish without moving a chunk.
+        if moved_bytes > 0 or history is not None:
             progressed = True
+        if moved_bytes > 0:
+            progress.chunk_progress(
+                worker_id,
+                rel_path=entry.rel_path,
+                chunk_bytes=moved_bytes,
+                total_bytes_copied=total_bytes_copied,
+                chunk_seconds=chunk_seconds,
+                chunk_round_completed=(index == len(entries) - 1),
+            )
+        if history is not None:
+            progress.chunk_finished(history)
     if not progressed:
         raise SparseTransferError("sparse engine called with nothing to transfer")
 
@@ -75,10 +121,18 @@ def _current_transfer(db: Database, side: str) -> Entry | None:
 
 
 def _advance_one_chunk(
-    db: Database, session: Session, entry: Entry, free_bytes: FreeBytes
-) -> None:
+    db: Database,
+    session: Session,
+    entry: Entry,
+    free_bytes: FreeBytes,
+    *,
+    worker_id: int,
+) -> tuple[int, int, float, ProgressFileHistory | None]:
     src = session.src_path(entry)
     dst = session.dst_path(entry)
+    stats = _SPARSE_STATS.setdefault(entry.id, _SparseStats(started_at=time.time()))
+
+    progress.chunk_started(worker_id, entry, note="sparse")
 
     if entry.state == "pending":
         _require_sparse_support(dst)
@@ -87,7 +141,7 @@ def _advance_one_chunk(
 
     if not src.exists():
         _finish(db, entry, dst)  # crashed between source delete and 'done' mark
-        return
+        return 0, entry.size or 0, 0.0, _history(entry, worker_id, stats, started_at=stats.started_at)
 
     remaining = src.stat().st_size
     _ensure_sparse_destination(dst, entry, remaining)
@@ -97,15 +151,54 @@ def _advance_one_chunk(
         length = remaining - offset
         _require_headroom(session, free_bytes, length, dst)
 
+        chunk_started = time.perf_counter()
         digest = _copy_range(src, dst, offset, length)   # fsyncs dst
         if session.verify_chunks:
             _verify_range(dst, offset, length, digest)
         winfs.truncate_file(src, offset)                 # fsyncs src
+        chunk_seconds = time.perf_counter() - chunk_started
+        stats.chunk_seconds += chunk_seconds
         remaining = offset
+    else:
+        length = 0
+        chunk_seconds = 0.0
 
     if remaining == 0:
         src.unlink()
         _finish(db, entry, dst)
+        history = _history(entry, worker_id, stats, started_at=stats.started_at)
+        _SPARSE_STATS.pop(entry.id, None)
+        return length, entry.size or 0, chunk_seconds, history
+
+    return length, (entry.size or 0) - remaining, chunk_seconds, None
+
+
+def _history(
+    entry: Entry,
+    worker_id: int,
+    stats: _SparseStats,
+    *,
+    started_at: float,
+) -> ProgressFileHistory:
+    finished_at = time.time()
+    duration = max(finished_at - started_at, 0.0)
+    size = entry.size or 0
+    return ProgressFileHistory(
+        entry_id=entry.id,
+        rel_path=entry.rel_path,
+        size=size,
+        worker_id=worker_id,
+        mode="sparse",
+        backend="sparse",
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_seconds=duration,
+        throughput_bps=(size / duration) if duration > 0 else None,
+        read_seconds=None,
+        write_seconds=None,
+        verify_seconds=None,
+        chunk_seconds=stats.chunk_seconds,
+    )
 
 
 def _ensure_sparse_destination(dst: Path, entry: Entry, remaining: int) -> None:
@@ -121,9 +214,9 @@ def _ensure_sparse_destination(dst: Path, entry: Entry, remaining: int) -> None:
     if remaining != entry.size:
         raise SparseTransferError(
             f"destination {dst} is missing/wrong-sized but the source was"
-            " already partially truncated — refusing to continue"
+            " already partially truncated - refusing to continue"
         )
-    winfs.create_sparse_file(dst, entry.size)
+    winfs.create_sparse_file(dst, entry.size or 0)
 
 
 def _finish(db: Database, entry: Entry, dst: Path) -> None:
@@ -179,7 +272,10 @@ def _require_sparse_support(dst: Path) -> None:
 
 
 def _require_headroom(
-    session: Session, free_bytes: FreeBytes, length: int, dst: Path
+    session: Session,
+    free_bytes: FreeBytes,
+    length: int,
+    dst: Path,
 ) -> None:
     if free_bytes(dst.parent) < length:
         raise SparseTransferError(

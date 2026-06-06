@@ -58,6 +58,45 @@ def create_sparse_file(path: Path, size: int) -> None:
         os.fsync(handle.fileno())
 
 
+def copy_file_with_progress(src: Path, dst: Path, on_progress) -> None:
+    """Copy src -> dst via Win32 CopyFileExW (Windows only; overwrites dst).
+
+    Uses the kernel copy engine (same one Explorer uses): attributes and
+    alternate data streams are copied, large files switch to unbuffered I/O
+    automatically. `on_progress(total_bytes, transferred_bytes)` is invoked
+    from the calling thread as the copy advances; exceptions it raises are
+    swallowed by ctypes (the copy continues), so it must not be load-bearing.
+    """
+    import ctypes
+
+    LPPROGRESS_ROUTINE = ctypes.WINFUNCTYPE(
+        ctypes.c_uint32,                        # PROGRESS_CONTINUE = 0
+        ctypes.c_longlong, ctypes.c_longlong,   # total size, total transferred
+        ctypes.c_longlong, ctypes.c_longlong,   # stream size, stream transferred
+        ctypes.c_uint32, ctypes.c_uint32,       # stream number, callback reason
+        ctypes.c_void_p, ctypes.c_void_p,       # source/destination handles
+        ctypes.c_void_p,                        # user data
+    )
+
+    @LPPROGRESS_ROUTINE
+    def _routine(total, transferred, *_):
+        on_progress(total, transferred)
+        return 0  # PROGRESS_CONTINUE
+
+    ok = ctypes.windll.kernel32.CopyFileExW(
+        ctypes.c_wchar_p(str(src)),
+        ctypes.c_wchar_p(str(dst)),
+        _routine,
+        None,                                   # user data
+        None,                                   # cancel flag
+        ctypes.c_uint32(0),                     # flags: overwrite existing
+    )
+    if not ok:
+        raise OSError(
+            f"CopyFileExW failed for {src} -> {dst} (error {ctypes.GetLastError()})"
+        )
+
+
 def truncate_file(path: Path, new_size: int) -> None:
     """Shrink `path` to `new_size` bytes and fsync (calls SetEndOfFile on Windows)."""
     with open(path, "r+b") as handle:

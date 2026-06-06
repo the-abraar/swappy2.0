@@ -5,7 +5,7 @@ free space on each drive is far smaller than either folder. Crash-safe and
 resumable.
 
 ```text
-python -m swap run    --folder-a D:\Games\GameA --folder-b E:\Games\GameB --work-dir D:\.swap_work
+python -m swap run    --folder-a F:\wer --folder-b G:\qwe --work-dir I:\.swap_work
 python -m swap resume --work-dir D:\.swap_work
 python -m swap status --work-dir D:\.swap_work
 ```
@@ -31,7 +31,7 @@ The transfer stage is a single loop:
 ```text
 loop:
     scheduler.choose_next_copy(...)   # pure heuristic, scheduler.py
-    -> a file fits:   copier.copy_file(...)        # fast path (robocopy)
+    -> a file fits:   copier.copy_file(...)        # fast path (CopyFileExW)
     -> nothing fits:  sparse.advance_round(...)    # deadlock engine, one chunk each way
 ```
 
@@ -46,7 +46,7 @@ Module map:
 | `scanner.py` | inventory staged trees | db |
 | `transfer.py` | structure pass + the copy loop | scheduler, copier, sparse |
 | `scheduler.py` | copy-ordering heuristic — pure functions, no I/O, no DB | — |
-| `copier.py` | whole-file copy (robocopy / python), verify, delete source | db, winfs |
+| `copier.py` | whole-file copy (winapi / python), verify, delete source | db, winfs |
 | `sparse.py` | low-space deadlock engine (see below) | db, winfs |
 | `cleanup.py` | remove empty staged trees | db |
 | `winfs.py` | ctypes Win32 sparse-file utilities + fsync helpers | — |

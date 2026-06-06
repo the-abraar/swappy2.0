@@ -52,6 +52,7 @@ def _setup_and_run(
     files_b: dict[str, bytes],
     chunk_size: int = 4,
     safety_margin: int = 0,
+    worker_count: int = 8,
     free_bytes_wrapper=None,
 ) -> tuple[Database, FakeDrives, Session]:
     """
@@ -82,6 +83,7 @@ def _setup_and_run(
         chunk_size=chunk_size,
         safety_margin=safety_margin,
         backend="python",
+        worker_count=worker_count,
     )
     db.create_session(session)
 
@@ -296,6 +298,40 @@ def test_idempotent_after_done(tmp_path):
 
     session2 = db.session()
     assert session2.stage == "done"
+
+    db.close()
+
+
+def test_pipeline_persists_progress_summary_and_history(tmp_path):
+    files_a = {
+        "a.bin": b"A" * 5,
+        "nested/b.bin": b"B" * 7,
+    }
+    files_b = {
+        "c.bin": b"C" * 6,
+    }
+
+    db, _drives, _session = _setup_and_run(
+        tmp_path,
+        cap_a=100_000,
+        cap_b=100_000,
+        files_a=files_a,
+        files_b=files_b,
+        worker_count=3,
+    )
+
+    summary = db.progress_summary()
+    assert summary is not None
+    assert summary.done_files == 3
+    assert summary.total_files == 3
+    assert summary.finished_at is not None
+
+    workers = db.progress_workers()
+    assert len(workers) == 3
+
+    history = db.progress_history()
+    assert len(history) == 3
+    assert sorted(item.rel_path for item in history) == ["a.bin", "c.bin", "nested/b.bin"]
 
     db.close()
 

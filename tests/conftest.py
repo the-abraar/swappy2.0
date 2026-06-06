@@ -105,6 +105,7 @@ def make_session(
     safety_margin: int = 0,
     backend: str = "python",
     verify_chunks: bool = False,
+    worker_count: int = 8,
     stage: str = "created",
 ) -> Session:
     """Build a Session row the same way cli._cmd_run does."""
@@ -119,6 +120,7 @@ def make_session(
         backend=backend,
         verify_chunks=verify_chunks,
         safety_margin=safety_margin,
+        worker_count=worker_count,
         stage=stage,
     )
 

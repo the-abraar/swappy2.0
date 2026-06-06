@@ -50,6 +50,7 @@ def _cmd_run(db: Database, args: argparse.Namespace) -> None:
         backend=args.backend,
         verify_chunks=not args.no_verify_chunks,
         safety_margin=parse_size(args.safety_margin),
+        worker_count=args.workers,
         stage="created",
     ))
     volume_id = _simulated_volume_id if args.volume_mode == "simulate-distinct" else None
@@ -86,8 +87,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     run.add_argument("--work-dir", required=True)
     run.add_argument("--chunk-size", default="64MB")
     run.add_argument("--safety-margin", default="64MB")
-    run.add_argument("--backend", choices=("robocopy", "python"),
-                     default="robocopy" if sys.platform == "win32" else "python")
+    run.add_argument("--backend", choices=("winapi", "python"),
+                     default="winapi" if sys.platform == "win32" else "python")
+    run.add_argument("--workers", type=int, default=8)
     run.add_argument("--no-verify-chunks", action="store_true",
                      help="skip per-chunk read-back verification in the sparse engine")
     run.add_argument("--volume-mode", choices=("real", "simulate-distinct"), default="real",
@@ -99,4 +101,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     status = commands.add_parser("status", help="show progress")
     status.add_argument("--work-dir", required=True)
 
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if getattr(args, "command", None) == "run" and args.workers <= 0:
+        raise SystemExit("--workers must be at least 1")
+    return args

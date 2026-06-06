@@ -323,6 +323,31 @@ def test_recovery_dst_missing_src_complete(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# test: zero-byte pending file completes in one round without raising
+# ---------------------------------------------------------------------------
+
+def test_zero_byte_file_completes_without_error(tmp_path):
+    """A zero-byte file moves no chunk but still finishes the entry —
+    advance_round must count that as progress, not raise."""
+    drives = _make_drives(tmp_path)
+    db, session, entry = _setup_scanned_session(
+        tmp_path, drives, "A", "empty.bin", b"", chunk_size=4
+    )
+
+    src = session.src_path(entry)
+    dst = session.dst_path(entry)
+
+    advance_round(db, session, drives.free_bytes)
+
+    done = db.entries(kind="file", state="done")
+    assert len(done) == 1
+    assert dst.exists() and dst.stat().st_size == 0
+    assert not src.exists()
+
+    db.close()
+
+
+# ---------------------------------------------------------------------------
 # test: corruption guard — dst missing, src already truncated -> SparseTransferError
 # ---------------------------------------------------------------------------
 

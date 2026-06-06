@@ -7,6 +7,7 @@ name = "swap"
 version = "0.0.0"
 description = "Windows-first crash-safe folder swap CLI scaffold"
 requires-python = ">=3.11"
+dependencies = ["rich>=13"]
 
 [project.scripts]
 swap = "swap.cli:main"
