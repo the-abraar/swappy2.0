@@ -57,7 +57,10 @@ class FakeDrives:
         total = 0
         for p in drive_root.rglob("*"):
             if p.is_file() and not p.is_symlink():
-                total += p.stat().st_size
+                try:
+                    total += p.stat().st_size
+                except OSError:
+                    continue  # deleted by a copy worker between listing and stat
         return total
 
     def _sparse_hole(self, drive_root: Path) -> int:
@@ -72,6 +75,8 @@ class FakeDrives:
         for entry in self._db.entries(kind="file", state="sparse"):
             dst = session.dst_path(entry)
             src = session.src_path(entry)
+            if session.stage == "rolling_back":
+                src, dst = dst, src  # rollback drains toward the staged side
             try:
                 dst.relative_to(drive_root)
             except ValueError:

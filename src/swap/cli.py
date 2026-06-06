@@ -1,8 +1,9 @@
 """Command-line interface.
 
-    python -m swap run    --folder-a D:\\Games\\GameA --folder-b E:\\Games\\GameB --work-dir D:\\.swap_work
-    python -m swap resume --work-dir D:\\.swap_work
-    python -m swap status --work-dir D:\\.swap_work
+    python -m swap run      --folder-a D:\\Games\\GameA --folder-b E:\\Games\\GameB --work-dir D:\\.swap_work
+    python -m swap resume   --work-dir D:\\.swap_work
+    python -m swap rollback --work-dir D:\\.swap_work
+    python -m swap status   --work-dir D:\\.swap_work
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import pipeline
+from . import pipeline, rollback
 from .db import Database, Session
 
 _SIZE_PATTERN = re.compile(r"^(\d+)\s*(B|KB|MB|GB)?$", re.IGNORECASE)
@@ -26,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "run":
             _cmd_run(db, args)
         elif args.command == "resume":
-            pipeline.run(db)
+            _cmd_resume(db)
+        elif args.command == "rollback":
+            rollback.run(db)
         elif args.command == "status":
             _cmd_status(db)
     finally:
@@ -55,6 +58,15 @@ def _cmd_run(db: Database, args: argparse.Namespace) -> None:
     ))
     volume_id = _simulated_volume_id if args.volume_mode == "simulate-distinct" else None
     pipeline.run(db, volume_id=volume_id)
+
+
+def _cmd_resume(db: Database) -> None:
+    stage = db.session().stage
+    if stage == "rolling_back":
+        raise SystemExit("a rollback is in progress; run `swap rollback` to finish it")
+    if stage == "rolled_back":
+        raise SystemExit("this session was rolled back; start over with `swap run`")
+    pipeline.run(db)
 
 
 def _cmd_status(db: Database) -> None:
@@ -97,6 +109,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
     resume = commands.add_parser("resume", help="continue an interrupted swap")
     resume.add_argument("--work-dir", required=True)
+
+    rollback_cmd = commands.add_parser("rollback", help="undo a partially-completed swap")
+    rollback_cmd.add_argument("--work-dir", required=True)
 
     status = commands.add_parser("status", help="show progress")
     status.add_argument("--work-dir", required=True)

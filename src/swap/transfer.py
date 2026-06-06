@@ -16,6 +16,9 @@ progress flushing. Worker threads only copy bytes and report results.
 Sparse rounds run only while no whole-file workers are in flight, and the
 loop re-consults the scheduler after every completion and sparse round, so
 the moment enough space is freed, transfers return to the fast path.
+
+`rollback.py` reuses create_symlinks and copy_files verbatim, passing a
+MIRRORED session (staged and final roots swapped) to move everything back.
 """
 
 from __future__ import annotations

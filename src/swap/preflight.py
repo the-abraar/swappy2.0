@@ -68,14 +68,38 @@ def _validate_roots(session: Session, volume_id: VolumeId) -> None:
 def _check_capacity(session: Session, free_bytes: FreeBytes) -> None:
     size_a = tree_size(session.folder_a)
     size_b = tree_size(session.folder_b)
-    final_free_a = free_bytes(session.folder_a) + size_a - size_b
-    final_free_b = free_bytes(session.folder_b) + size_b - size_a
+    ensure_capacity(
+        free_a=free_bytes(session.folder_a),
+        free_b=free_bytes(session.folder_b),
+        outgoing_a=size_a,
+        incoming_a=size_b,
+        outgoing_b=size_b,
+        incoming_b=size_a,
+        safety_margin=session.safety_margin,
+        action="swap",
+    )
 
+
+def ensure_capacity(
+    *,
+    free_a: int,
+    free_b: int,
+    outgoing_a: int,
+    incoming_a: int,
+    outgoing_b: int,
+    incoming_b: int,
+    safety_margin: int,
+    action: str,
+) -> None:
+    """Refuse when either drive would end below the margin after the move
+    (free + outgoing - incoming). Shared by the swap preflight and rollback."""
+    final_free_a = free_a + outgoing_a - incoming_a
+    final_free_b = free_b + outgoing_b - incoming_b
     for drive, final_free in (("A", final_free_a), ("B", final_free_b)):
-        if final_free < session.safety_margin:
+        if final_free < safety_margin:
             raise PreflightError(
-                f"swap is not capacity-feasible: drive {drive} would end with"
-                f" {final_free} bytes free (< {session.safety_margin} margin)"
+                f"{action} is not capacity-feasible: drive {drive} would end with"
+                f" {final_free} bytes free (< {safety_margin} margin)"
             )
 
 

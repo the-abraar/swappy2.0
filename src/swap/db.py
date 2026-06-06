@@ -5,10 +5,15 @@ Correctness-critical tables:
   session  one row: the six root paths, options, and `stage` — how far the
            pipeline has progressed. Stages advance monotonically:
            created -> staged -> scanned -> transferred -> done
+           `swap rollback` branches off that line instead:
+           staged|scanned|transferred -> rolling_back -> rolled_back
 
   entries  one row per item discovered in the staged trees.
            state: pending -> done            (dirs, symlinks, whole-file copies)
                   pending -> sparse -> done  (files moved by the sparse engine)
+           Once stage is 'rolling_back' the same values carry the REVERSE
+           meaning: 'pending' = still needs moving back to its staged tree,
+           'done' = nothing left to undo (see rollback.py).
 
 There is deliberately no chunk table. Sparse-transfer progress is derived
 from the filesystem itself: every transferred chunk truncates the source
@@ -32,6 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 STAGES = ("created", "staged", "scanned", "transferred", "done")
+ROLLBACK_STAGES = ("rolling_back", "rolled_back")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS session (
@@ -302,6 +308,31 @@ class Database:
         if STAGES.index(new_stage) <= STAGES.index(current):
             raise RuntimeError(f"cannot move stage backwards: {current} -> {new_stage}")
         self._conn.execute("UPDATE session SET stage = ?", (new_stage,))
+
+    def begin_rollback(self, entry_states: dict[int, str]) -> None:
+        """Atomically remap entry states to their rollback meaning and enter
+        'rolling_back'. One transaction, so a crash never leaves flipped
+        entries under a forward stage (or vice versa)."""
+        current = self.session().stage
+        if current not in ("staged", "scanned", "transferred"):
+            raise RuntimeError(f"cannot start a rollback from stage '{current}'")
+        self._conn.execute("BEGIN")
+        try:
+            self._conn.executemany(
+                "UPDATE entries SET state = ? WHERE id = ?",
+                [(state, entry_id) for entry_id, state in entry_states.items()],
+            )
+            self._conn.execute("UPDATE session SET stage = 'rolling_back'")
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+
+    def finish_rollback(self) -> None:
+        current = self.session().stage
+        if current not in ("created", "rolling_back"):
+            raise RuntimeError(f"cannot finish a rollback from stage '{current}'")
+        self._conn.execute("UPDATE session SET stage = 'rolled_back'")
 
     # -- entries -----------------------------------------------------------
 

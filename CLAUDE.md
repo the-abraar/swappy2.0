@@ -14,12 +14,15 @@ python pytest.py tests/test_sparse.py -q     # single test file
 python -m pytest tests -q                    # real pytest also works
 python -m pip install -e .                   # editable install
 
-python -m swap run    --folder-a D:\A --folder-b E:\B --work-dir D:\.swap_work
-python -m swap resume --work-dir D:\.swap_work
-python -m swap status --work-dir D:\.swap_work
+python -m swap run      --folder-a D:\A --folder-b E:\B --work-dir D:\.swap_work
+python -m swap resume   --work-dir D:\.swap_work
+python -m swap rollback --work-dir D:\.swap_work
+python -m swap status   --work-dir D:\.swap_work
 ```
 
-CLI flags for `run`: `--chunk-size` (default 64MB), `--safety-margin` (default 64MB), `--backend winapi|python` (default winapi on Windows, python elsewhere), `--workers N` (default 8, must be ≥1), `--no-verify-chunks`, `--volume-mode real|simulate-distinct` (the latter treats each root as its own volume, for tests on one disk). Sizes parse as `64MB`-style strings (`cli.parse_size`). `resume` takes only `--work-dir` and reuses all stored options including `worker_count`.
+CLI flags for `run`: `--chunk-size` (default 64MB), `--safety-margin` (default 64MB), `--backend winapi|python` (default winapi on Windows, python elsewhere), `--workers N` (default 8, must be ≥1), `--no-verify-chunks`, `--volume-mode real|simulate-distinct` (the latter treats each root as its own volume, for tests on one disk). Sizes parse as `64MB`-style strings (`cli.parse_size`). `resume` and `rollback` take only `--work-dir` and reuse all stored options including `worker_count`.
+
+`rollback` (`rollback.py`) undoes a partially-completed swap and is itself crash-safe/resumable (re-run `swap rollback`; `resume` refuses while stage is `rolling_back`/`rolled_back`). It refuses once stage=='done'. Stages branch `staged|scanned|transferred → rolling_back → rolled_back` (`db.begin_rollback` flips entry states + stage in one transaction; under rollback, `pending` = move back, `done` = nothing to undo). The reverse transfer is the forward machinery run on a MIRRORED session (staged/final roots swapped pairwise), so scheduler + sparse engine crash-safety applies symmetrically. In-flight `sparse` files are first drained forward (paired `sparse.advance_round` loops, NOT single-file drains — one-directional chunks aren't space-neutral) because a half-moved sparse pair can't be reversed without chunk bookkeeping; the partial-destination sweep hard-refuses while one exists.
 
 Note: `pytest.py` at the repo root is a minimal pytest-shim runner (real pytest is not required). It shadows the `pytest` module for anything imported from the repo root. The shim only supports: function-level conftest fixtures, `tmp_path`, `-q`, `-m markexpr`, path args, and `pytest.mark.*`. Don't use parametrize, classes, or plugins in tests.
 
