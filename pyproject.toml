@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swap"
+version = "0.0.0"
+description = "Windows-first crash-safe folder swap CLI scaffold"
+requires-python = ">=3.11"
+
+[project.scripts]
+swap = "swap.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+markers = [
+  "perf: performance-sensitive tests that run only with --run-perf",
+]

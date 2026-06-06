@@ -1,0 +1,5 @@
+/.omo
+/.claude
+**/__pycache__
+**.stackdump
+**/**.egg-info
