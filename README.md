@@ -1,115 +1,270 @@
-# swap
+<div align="center">
 
-Windows-first CLI that swaps two large folder trees across drives, even when
-free space on each drive is far smaller than either folder. Crash-safe and
-resumable.
+# Swappy
 
-```text
-python -m swap run    --folder-a F:\wer --folder-b G:\qwe --work-dir I:\.swap_work
+<p>
+  <strong>Crash-safe folder swapping for Windows when free space is tight.</strong>
+</p>
+
+<p>
+  <a href="#"><img src="https://img.shields.io/badge/platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"></a>
+  <a href="#"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+"></a>
+  <a href="#"><img src="https://img.shields.io/badge/status-experimental-F59E0B?style=for-the-badge" alt="Experimental"></a>
+  <a href="#"><img src="https://img.shields.io/badge/recovery-resumable-16A34A?style=for-the-badge" alt="Resumable"></a>
+</p>
+
+<p>
+  Swap two large folder trees across different drives, even when neither drive
+  has enough free space to temporarily hold the other.
+</p>
+
+</div>
+
+---
+
+## Overview
+
+## ✨ Overview
+
+Swappy exists for one very specific and very annoying problem:
+
+> you need to exchange two large folders across two drives, but normal copy,
+> move, or rename workflows break down because there is not enough free space
+> to juggle them safely.
+
+Instead of relying on fragile manual steps, Swappy stages both roots, tracks
+durable state in SQLite, resumes after interruption, and falls back to sparse
+chunk movement when whole-file copies would deadlock.
+
+## 🎯 Why It’s Useful
+
+Many "simple" folder swaps are only simple when one of these is true:
+
+- one drive has lots of extra free space;
+- you have a third staging drive ready;
+- you can afford to manually recover from an interrupted transfer.
+
+Swappy is for the cases where none of that is true.
+
+<table>
+  <tr>
+    <td width="50%">
+      <h3>🧨 Without Swappy</h3>
+      <ul>
+        <li>Manual copy juggling</li>
+        <li>Partial copies on interruption</li>
+        <li>Low-space deadlocks</li>
+        <li>Messy cleanup and uncertainty</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>✅ With Swappy</h3>
+      <ul>
+        <li>Single-purpose CLI workflow</li>
+        <li>Durable session state in <code>swap.db</code></li>
+        <li>Resume and rollback support</li>
+        <li>Sparse low-space transfer fallback</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+## 🚀 Features
+
+<table>
+  <tr>
+    <td width="33%">
+      <strong>📦 Low-Space Aware</strong><br>
+      Uses ordinary whole-file copies when possible, then switches to sparse
+      chunk rounds when the transfer would otherwise stall.
+    </td>
+    <td width="33%">
+      <strong>🛡️ Crash-Safe by Design</strong><br>
+      Progress is persisted, stages are idempotent, and interrupted runs can be
+      resumed without rebuilding the transfer plan from scratch.
+    </td>
+    <td width="33%">
+      <strong>🔁 Purpose-Built for Swaps</strong><br>
+      This is not a generic file sync tool. It is designed specifically for
+      exchanging two folder trees across distinct volumes.
+    </td>
+  </tr>
+  <tr>
+    <td width="33%">
+      <strong>↩️ Rollback Support</strong><br>
+      Partial swaps can be reversed before final cleanup completes.
+    </td>
+    <td width="33%">
+      <strong>📊 Live Progress</strong><br>
+      Shows multi-worker progress with Rich when running in a terminal.
+    </td>
+    <td width="33%">
+      <strong>🔍 Clear Safety Checks</strong><br>
+      Rejects impossible layouts early: same-volume roots, nested roots, and
+      unsupported reparse-point cases.
+    </td>
+  </tr>
+</table>
+
+## ⚡ Quick Start
+
+Install in editable mode:
+
+```bash
+python -m pip install -e .
+```
+
+Start a new swap:
+
+```bash
+python -m swap run --folder-a D:\FolderA --folder-b E:\FolderB --work-dir D:\.swap_work
+```
+
+Resume an interrupted run:
+
+```bash
 python -m swap resume --work-dir D:\.swap_work
+```
+
+Check status:
+
+```bash
 python -m swap status --work-dir D:\.swap_work
 ```
 
-## How to read this codebase
+Roll back a partial swap:
 
-Start at `src/swap/pipeline.py`. The whole program is five stage calls:
-
-```python
-preflight.check(db)        # refuse impossible/unsafe swaps before touching anything
-staging.stage_roots(db)    # rename originals aside, create empty final roots
-scanner.scan(db)           # inventory the staged trees into SQLite
-transfer.transfer_all(db)  # move everything (the interesting part)
-cleanup.finalize(db)       # remove empty staged trees, mark the session done
+```bash
+python -m swap rollback --work-dir D:\.swap_work
 ```
 
-Each stage reads what it needs from the database, does its work, and advances
-`session.stage`. Stages are idempotent — re-running a completed stage is a
-no-op. **Comment out a stage call to disable it.**
+> The product name is **Swappy**, but the current Python package and CLI module
+> name are still `swap`.
 
-The transfer stage is a single loop:
+## ⚙️ How It Works
 
-```text
-loop:
-    scheduler.choose_next_copy(...)   # pure heuristic, scheduler.py
-    -> a file fits:   copier.copy_file(...)        # fast path (CopyFileExW)
-    -> nothing fits:  sparse.advance_round(...)    # deadlock engine, one chunk each way
+Swappy runs a staged pipeline:
+
+```mermaid
+flowchart LR
+    A[Preflight] --> B[Staging]
+    B --> C[Scanner]
+    C --> D[Transfer]
+    D --> E[Cleanup]
 ```
 
-Module map:
+### 🧭 Stage flow
 
-| module | role | talks to |
-|---|---|---|
-| `pipeline.py` | top-level driver | every stage |
-| `db.py` | ALL durable state: 2 SQLite tables (`session`, `entries`) | — |
-| `preflight.py` | validation + capacity feasibility | db |
-| `staging.py` | root renames (instant, same-drive) | db |
-| `scanner.py` | inventory staged trees | db |
-| `transfer.py` | structure pass + the copy loop | scheduler, copier, sparse |
-| `scheduler.py` | copy-ordering heuristic — pure functions, no I/O, no DB | — |
-| `copier.py` | whole-file copy (winapi / python), verify, delete source | db, winfs |
-| `sparse.py` | low-space deadlock engine (see below) | db, winfs |
-| `cleanup.py` | remove empty staged trees | db |
-| `winfs.py` | ctypes Win32 sparse-file utilities + fsync helpers | — |
-| `cli.py` | argparse front end | pipeline, db |
+1. `preflight`
+   Validates both roots, checks they live on distinct volumes, and rejects
+   impossible swaps before anything is modified.
+2. `staging`
+   Renames the original roots aside on their own drives and prepares the final
+   destination roots.
+3. `scanner`
+   Walks both staged trees and records the inventory in SQLite.
+4. `transfer`
+   Recreates structure, copies files, and engages the sparse engine when free
+   space is too tight for ordinary whole-file movement.
+5. `cleanup`
+   Removes the now-empty staged trees and marks the session complete.
 
-## State model (deliberately tiny)
+## 🧩 Low-Space Strategy
 
-All durable state is in `swap.db` (SQLite, WAL, `synchronous=FULL`):
+The interesting part is the transfer engine.
 
-- `session` — one row: the six root paths, options, and `stage`
-  (`created → staged → scanned → transferred → done`).
-- `entries` — one row per dir/file/symlink:
-  `pending → done`, or `pending → sparse → done` for files moved by the
-  deadlock engine.
+Swappy always prefers the fast path first:
 
-There is **no chunk table**. Sparse-transfer progress is derived from the
-filesystem itself: every transferred chunk truncates the source file, so the
-source's current size *is* the durable progress marker.
+- pick a whole file that fits;
+- copy it durably;
+- delete the source only after the destination is safe.
 
-## The deadlock engine (`sparse.py`)
+If nothing fits on either side, it does not give up. Instead it switches to a
+sparse round-robin strategy that moves one chunk at a time in each direction
+until enough space is freed to return to whole-file copying.
 
-When no whole-file copy fits on either drive (e.g. `A(10GB)+B(10GB)` vs
-`C(20GB)` with 250MB free per side), the sparse engine alternates
-single-chunk moves between the drives — a circular buffer:
+That makes it useful in the exact scenario where manual workflows usually fail.
 
-1. Create the destination as an **NTFS sparse file** at full size
-   (0 bytes allocated on disk).
-2. Copy the chunk at the **tail** of the source into the destination at the
-   same byte offset; fsync.
-3. Truncate the source by one chunk; fsync.
-4. Alternate directions: each full round is space-neutral on both drives, so
-   `chunk_size` of headroom per drive is all that's ever needed.
+## 🛡️ Safety Model
 
-Every byte is read once and written once (1x I/O — no merge step, no
-temporary chunk files). After every round the scheduler is consulted again,
-so the moment enough space frees up, transfers return to the fast
-whole-file path.
+Swappy is built around a few deliberate guarantees:
 
-## Crash safety / resume
+- source data is never destroyed before destination data is durable;
+- session progress is persisted in SQLite;
+- sparse progress is derived from the filesystem itself;
+- stage functions are idempotent, so `resume` simply re-runs the pipeline;
+- rollback remains available until final cleanup completes.
 
-The recovery model is **coarse and idempotent**: resume just re-runs the
-pipeline (`python -m swap resume`); the worst case redoes one chunk or one
-file copy. Two invariants make this safe:
+## 📋 Requirements
 
-- A source file (or chunk) is never destroyed until its destination data has
-  been fsynced to disk.
-- Completion is recorded in SQLite only after the step is fully durable, so
-  an interrupted step simply re-runs.
+- Windows-oriented environment
+- Python 3.11+
+- Two existing source roots on distinct volumes
+- Sparse-file support on both relevant volumes for the low-space fallback path
 
-## Limitations
+NTFS supports sparse files. exFAT does not.
 
-- Junctions and unknown reparse points are refused at scan time (before
-  anything is modified). Symlinks are recreated, not followed.
-- The deadlock engine requires both volumes to support sparse files (NTFS
-  does; exFAT does not — the run stops with a clear error).
-- Metadata preservation is basic: contents + timestamps/attributes via the
-  backend; no ACLs/ADS guarantees.
-- No undo after a successfully completed swap.
+## 🧪 Command Reference
 
-## Tests
+### `run`
 
-Real pytest is not required; the repo ships a minimal runner shim:
+Starts a new swap session and creates `swap.db` in the work directory.
 
-```text
+```bash
+python -m swap run ^
+  --folder-a D:\FolderA ^
+  --folder-b E:\FolderB ^
+  --work-dir D:\.swap_work ^
+  --chunk-size 64MB ^
+  --safety-margin 64MB ^
+  --workers 8
+```
+
+Useful options:
+
+- `--chunk-size`: sparse transfer chunk size, default `64MB`
+- `--safety-margin`: minimum free space each drive must still have after the full swap, default `64MB`
+- `--workers`: concurrent whole-file copy workers, default `8`
+- `--backend`: copy backend, `winapi` or `python`
+- `--no-verify-chunks`: skip sparse chunk read-back verification
+
+### `resume`
+
+Re-runs the idempotent pipeline for an existing work directory.
+
+### `status`
+
+Prints the session stage and entry counts by state.
+
+### `rollback`
+
+Restores a partially completed swap, as long as the session has not already
+reached the final `done` state.
+
+## 🚧 Limitations
+
+- roots must already exist and must not be nested;
+- roots must be on distinct volumes;
+- junctions and unsupported reparse points are refused during scanning;
+- symlinks are recreated, not followed;
+- metadata preservation is basic and does not guarantee ACLs or alternate data streams;
+- once cleanup finishes and the session reaches `done`, the swap is final.
+
+## 🛠️ Development
+
+Run the test suite with:
+
+```bash
 python pytest.py -q
 ```
+
+Contributor-oriented architecture notes live in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+## 🗂️ Project Notes
+
+- Main package: `src/swap/`
+- Entry point: `src/swap/cli.py`
+- Pipeline driver: `src/swap/pipeline.py`
+- Durable state: `src/swap/db.py`
+
+If you are contributing, start with [CONTRIBUTORS.md](CONTRIBUTORS.md).
