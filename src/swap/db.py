@@ -1,4 +1,4 @@
-"""All durable state, in one SQLite database (WAL, synchronous=FULL).
+"""All durable state, in one SQLite database (WAL, synchronous=NORMAL).
 
 Correctness-critical tables:
 
@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -245,11 +246,26 @@ class Database:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(db_path, isolation_level=None)
         self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=FULL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(_SCHEMA)
 
     def close(self) -> None:
         self._conn.close()
+
+    @contextmanager
+    def _transaction(self, *, durable: bool = False):
+        if durable:
+            self._conn.execute("PRAGMA synchronous=FULL")
+        self._conn.execute("BEGIN")
+        try:
+            yield
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+        finally:
+            if durable:
+                self._conn.execute("PRAGMA synchronous=NORMAL")
 
     # -- session -----------------------------------------------------------
 
@@ -307,7 +323,8 @@ class Database:
         current = self.session().stage
         if STAGES.index(new_stage) <= STAGES.index(current):
             raise RuntimeError(f"cannot move stage backwards: {current} -> {new_stage}")
-        self._conn.execute("UPDATE session SET stage = ?", (new_stage,))
+        with self._transaction(durable=True):
+            self._conn.execute("UPDATE session SET stage = ?", (new_stage,))
 
     def begin_rollback(self, entry_states: dict[int, str]) -> None:
         """Atomically remap entry states to their rollback meaning and enter
@@ -316,40 +333,31 @@ class Database:
         current = self.session().stage
         if current not in ("staged", "scanned", "transferred"):
             raise RuntimeError(f"cannot start a rollback from stage '{current}'")
-        self._conn.execute("BEGIN")
-        try:
+        with self._transaction(durable=True):
             self._conn.executemany(
                 "UPDATE entries SET state = ? WHERE id = ?",
                 [(state, entry_id) for entry_id, state in entry_states.items()],
             )
             self._conn.execute("UPDATE session SET stage = 'rolling_back'")
-            self._conn.execute("COMMIT")
-        except BaseException:
-            self._conn.execute("ROLLBACK")
-            raise
 
     def finish_rollback(self) -> None:
         current = self.session().stage
         if current not in ("created", "rolling_back"):
             raise RuntimeError(f"cannot finish a rollback from stage '{current}'")
-        self._conn.execute("UPDATE session SET stage = 'rolled_back'")
+        with self._transaction(durable=True):
+            self._conn.execute("UPDATE session SET stage = 'rolled_back'")
 
     # -- entries -----------------------------------------------------------
 
     def replace_entries(self, entries: list[Entry]) -> None:
         """Atomically replace the whole inventory (used by the scanner)."""
-        self._conn.execute("BEGIN")
-        try:
+        with self._transaction():
             self._conn.execute("DELETE FROM entries")
             self._conn.executemany(
                 "INSERT INTO entries (side, rel_path, kind, size, link_target, state)"
                 " VALUES (?, ?, ?, ?, ?, 'pending')",
                 [(e.side, e.rel_path, e.kind, e.size, e.link_target) for e in entries],
             )
-            self._conn.execute("COMMIT")
-        except BaseException:
-            self._conn.execute("ROLLBACK")
-            raise
 
     def entries(self, *, kind: str | None = None, state: str | None = None) -> list[Entry]:
         sql = "SELECT id, side, rel_path, kind, size, link_target, state FROM entries"
@@ -367,8 +375,31 @@ class Database:
         rows = self._conn.execute(sql, params).fetchall()
         return [Entry(*row) for row in rows]
 
-    def set_entry_state(self, entry_id: int, state: str) -> None:
-        self._conn.execute("UPDATE entries SET state = ? WHERE id = ?", (state, entry_id))
+    def set_entry_state(self, entry_id: int, state: str, *, durable: bool = False) -> None:
+        with self._transaction(durable=durable):
+            self._conn.execute("UPDATE entries SET state = ? WHERE id = ?", (state, entry_id))
+
+    def set_entries_state(
+        self,
+        entry_ids: list[int],
+        state: str,
+        *,
+        durable: bool = False,
+    ) -> None:
+        if not entry_ids:
+            return
+        placeholders = ", ".join("?" for _ in entry_ids)
+        with self._transaction(durable=durable):
+            self._conn.execute(
+                f"UPDATE entries SET state = ? WHERE id IN ({placeholders})",
+                [state, *entry_ids],
+            )
+
+    def set_entries_done(self, entry_ids: list[int]) -> None:
+        self.set_entries_state(entry_ids, "done")
+
+    def mark_entry_sparse(self, entry_id: int) -> None:
+        self.set_entry_state(entry_id, "sparse", durable=True)
 
     def counts_by_state(self) -> dict[str, int]:
         rows = self._conn.execute(
@@ -495,8 +526,7 @@ class Database:
         )
 
     def replace_progress_workers(self, workers: list[ProgressWorkerSnapshot]) -> None:
-        self._conn.execute("BEGIN")
-        try:
+        with self._transaction():
             self._conn.execute("DELETE FROM progress_workers")
             self._conn.executemany(
                 "INSERT INTO progress_workers"
@@ -521,10 +551,6 @@ class Database:
                     for worker in workers
                 ],
             )
-            self._conn.execute("COMMIT")
-        except BaseException:
-            self._conn.execute("ROLLBACK")
-            raise
 
     def append_progress_history(self, history: ProgressFileHistory) -> None:
         self._conn.execute(

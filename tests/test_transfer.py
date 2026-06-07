@@ -178,6 +178,113 @@ def test_copy_files_reserves_destination_space(tmp_path):
         db.close()
 
 
+def test_copy_files_flushes_done_entries_in_one_final_batch(tmp_path):
+    db, session, drives = _setup_scanned_session(tmp_path, worker_count=1)
+    first = _insert_file_entry(db, session, side="A", rel_path="first.bin", data=b"1")
+    second = _insert_file_entry(db, session, side="A", rel_path="second.bin", data=b"22")
+
+    calls: list[list[int]] = []
+    original = db.set_entries_done
+
+    def record_done(entry_ids: list[int]) -> None:
+        calls.append(list(entry_ids))
+        original(entry_ids)
+
+    db.set_entries_done = record_done  # type: ignore[method-assign]
+    progress.start_run(db, session, stage="transfer", status_text="batch")
+    try:
+        transfer.copy_files(db, session, drives.free_bytes)
+        assert calls == [[first.id, second.id]]
+        assert all(entry.state == "done" for entry in db.entries(kind="file"))
+    finally:
+        progress.abort_run(status_text="cleanup")
+        db.close()
+
+
+def test_copy_files_recovers_completed_copy_before_final_done_flush(tmp_path):
+    db, session, drives = _setup_scanned_session(tmp_path, worker_count=1)
+    entry = _insert_file_entry(db, session, side="A", rel_path="recovered.bin", data=b"payload")
+    src = session.src_path(entry)
+    dst = session.dst_path(entry)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(src.read_bytes())
+    src.unlink()
+
+    progress.start_run(db, session, stage="transfer", status_text="recover")
+    try:
+        transfer.copy_files(db, session, drives.free_bytes)
+        done = db.entries(kind="file", state="done")
+        assert [item.id for item in done] == [entry.id]
+        assert dst.read_bytes() == b"payload"
+    finally:
+        progress.abort_run(status_text="cleanup")
+        db.close()
+
+
+def test_copy_files_reloads_pending_after_sparse_round(tmp_path):
+    db, session, _drives = _setup_scanned_session(tmp_path, worker_count=1)
+    sparse_entry = _insert_file_entry(db, session, side="A", rel_path="needs-sparse.bin", data=b"A" * 5)
+    whole_file_entry = _insert_file_entry(db, session, side="B", rel_path="fits-later.bin", data=b"B" * 3)
+
+    phase = {"value": 0}
+    copied_ids: list[int] = []
+
+    original_sparse_advance = transfer.sparse.advance_round
+    original_copy_file = copier.copy_file
+
+    def fake_sparse_advance(current_db, current_session, current_free_bytes, *, worker_id=1):
+        if phase["value"] == 0:
+            current_db.mark_entry_sparse(sparse_entry.id)
+        else:
+            current_db.set_entry_state(sparse_entry.id, "done")
+        phase["value"] += 1
+
+    def fake_copy_file(current_session, entry, *, worker_id):
+        copied_ids.append(entry.id)
+        now = time.time()
+        return copier.CopyResult(
+            history=ProgressFileHistory(
+                entry_id=entry.id,
+                rel_path=entry.rel_path,
+                size=entry.size or 0,
+                worker_id=worker_id,
+                mode="whole-file",
+                backend="python",
+                started_at=now,
+                finished_at=now,
+                duration_seconds=0.0,
+                throughput_bps=None,
+                read_seconds=0.0,
+                write_seconds=0.0,
+                verify_seconds=0.0,
+                chunk_seconds=None,
+            )
+        )
+
+    def fake_free_bytes(path: Path) -> int:
+        if path == session.final_a:
+            return 6 if phase["value"] == 0 else 7
+        if path == session.final_b:
+            return 8 if phase["value"] == 0 else 10
+        raise AssertionError(f"unexpected path {path}")
+
+    transfer.sparse.advance_round = fake_sparse_advance
+    copier.copy_file = fake_copy_file
+    progress.start_run(db, session, stage="transfer", status_text="stale-cache")
+    try:
+        transfer.copy_files(db, session, fake_free_bytes)
+        assert copied_ids == [whole_file_entry.id]
+        assert sorted(entry.id for entry in db.entries(kind="file", state="done")) == [
+            sparse_entry.id,
+            whole_file_entry.id,
+        ]
+    finally:
+        transfer.sparse.advance_round = original_sparse_advance
+        copier.copy_file = original_copy_file
+        progress.abort_run(status_text="cleanup")
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # winapi backend (Windows-only: CopyFileExW)
 # ---------------------------------------------------------------------------

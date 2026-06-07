@@ -136,7 +136,10 @@ def _advance_one_chunk(
 
     if entry.state == "pending":
         _require_sparse_support(dst)
-        db.set_entry_state(entry.id, "sparse")
+        # This state flip must be durable before the first chunk can lead to
+        # source truncation; otherwise resume could mistake a mid-sparse file
+        # for an ordinary whole-file pending copy.
+        db.mark_entry_sparse(entry.id)
         entry = replace(entry, state="sparse")
 
     if not src.exists():
