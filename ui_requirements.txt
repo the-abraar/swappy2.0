@@ -1,0 +1,11 @@
+# Swappy's UIs (both the desktop GUI and the terminal TUI) are built on the
+# Python standard library — there are NO extra pip dependencies to install.
+#
+# The only platform note: the desktop GUI uses Tkinter. It ships with the
+# official Python installers on Windows and macOS. On Linux, install it once
+# with your package manager, e.g.:
+#
+#     sudo apt install python3-tk        # Debian/Ubuntu
+#     sudo dnf install python3-tkinter   # Fedora
+#
+# The terminal UI (`python -m swap tui`) needs nothing at all.

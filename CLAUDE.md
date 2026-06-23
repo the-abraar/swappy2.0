@@ -46,7 +46,7 @@ Dependency injection for tests: `pipeline.run(db, volume_id=..., free_bytes=...)
 
 ### Durable state (db.py)
 
-One SQLite database `<work-dir>/swap.db` (WAL, `synchronous=FULL`). Correctness-critical tables:
+One SQLite database `<work-dir>/swap.db` (WAL; connection default `synchronous=NORMAL`, raised to `synchronous=FULL` only inside the explicitly-durable transactions — `mark_entry_sparse`, `begin_rollback` — via `_transaction(durable=True)`). Correctness-critical tables:
 
 - `session` — one row: six root paths (`folder_a/b`, `staged_a/b`, `final_a/b`), `chunk_size`, `backend`, `verify_chunks`, `safety_margin`, `worker_count`, `stage`. Dataclass `Session` has path helpers: `src_path(entry)` = staged root + rel_path, `dst_path(entry)` = OTHER side's final root + rel_path.
 - `entries` — one row per dir/file/symlink: `(id, side 'A'|'B', rel_path, kind, size, link_target, state)`; `state: pending → done`, or `pending → sparse → done` for deadlock-engine files.
@@ -57,9 +57,9 @@ Display-only tables (live progress screen; safe to lose, rebuilt on resume): `pr
 
 ### Transfer (transfer.py — coordinator/worker split)
 
-`copy_files` is a single-threaded **coordinator** loop that owns all scheduling, `entries` state transitions, progress flushing (every 0.2 s + forced on completion), and destination free-space reservation: before dispatching, it subtracts `reserved_bytes[side]` from the scheduler's free-space view and adds `entry.size`; the reservation is released exactly once when the future is popped. `leased_ids` prevents double-leasing a file.
+`copy_files` is a single-threaded **coordinator** loop that owns all scheduling, `entries` state transitions, progress flushing (every 0.2 s + forced on completion), and destination free-space reservation: before dispatching, it subtracts `reserved_bytes[side]` from the scheduler's free-space view and adds `entry.size`; the reservation is released exactly once when the future is popped. A file can't be dispatched twice because it is `popleft`-ed off its per-side pending deque (`pending_by_side`) the moment it is leased to a worker.
 
-Whole-file copies run on a `ThreadPoolExecutor(worker_count)`. Workers (`copier.copy_file`) only copy bytes, emit progress events, and return a `CopyResult(history=ProgressFileHistory)` — **worker threads never touch SQLite**; the coordinator does `db.set_entry_state(id, "done")` when the future completes. Coordinator waits with `wait(futures, timeout=0.1, FIRST_COMPLETED)`.
+Whole-file copies run on a `ThreadPoolExecutor(worker_count)`. Workers (`copier.copy_file`) only copy bytes, emit progress events, and return a `CopyResult(history=ProgressFileHistory)` — **worker threads never touch SQLite**; the coordinator batches completions into a `done_batch` list and flushes them via `db.set_entries_done(ids)` (the per-id `db.set_entry_state(id, "done")` path is used by the sparse engine, not the whole-file coordinator). Coordinator waits with `wait(futures, timeout=0.01, FIRST_COMPLETED)`.
 
 Fallback: when no whole-file copy fits (`scheduler.choose_next_copy` returns None) AND no futures are in flight, run ONE `sparse.advance_round`, then re-consult the scheduler — sparse rounds are always serialized and never overlap whole-file workers.
 

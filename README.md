@@ -7,9 +7,10 @@
 </p>
 
 <p>
-  <a href="#"><img src="https://img.shields.io/badge/platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"></a>
+  <a href="#"><img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows / macOS / Linux"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+"></a>
-  <a href="#"><img src="https://img.shields.io/badge/status-experimental-F59E0B?style=for-the-badge" alt="Experimental"></a>
+  <a href="#"><img src="https://img.shields.io/badge/UI-CLI%20%C2%B7%20TUI%20%C2%B7%20GUI-00d4ff?style=for-the-badge" alt="CLI / TUI / GUI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT License"></a>
   <a href="#"><img src="https://img.shields.io/badge/recovery-resumable-16A34A?style=for-the-badge" alt="Resumable"></a>
 </p>
 
@@ -141,6 +142,34 @@ python -m swap rollback --work-dir D:\.swap_work
 > The product name is **Swappy**, but the current Python package and CLI module
 > name are still `swap`.
 
+## 🖥️ Three ways to use it
+
+Swappy ships with the same engine behind three front-ends. Pick whichever you
+like — they all run the identical, crash-safe pipeline and can hand off to each
+other (start in the GUI, resume from the CLI, watch from the TUI).
+
+| | Launch | Best for |
+|---|---|---|
+| **Desktop GUI** | `python -m swap gui` | Point-and-click: folder pickers, a live progress bar, per-worker table, and a log pane. |
+| **Terminal UI** | `python -m swap tui` | A friendly, full-screen dashboard right in your terminal — guided prompts plus live stats. |
+| **CLI** | `python -m swap run …` | Scripting, automation, and remote/headless machines. |
+
+Both UIs are **standard-library only** — there is nothing extra to `pip install`
+and no paid components. The desktop GUI uses Tkinter (bundled with the official
+Python installers; `sudo apt install python3-tk` on Debian/Ubuntu). The terminal
+UI needs nothing at all.
+
+Key things the UIs do for you:
+
+- **Live progress** — overall bar, transferred/total, throughput, ETA, and a
+  per-worker view, polled straight from the durable session database.
+- **Safe to close** — the swap runs as a background process, so quitting the
+  window or terminal does not stop it; reopen and **Resume** any time.
+- **Cancel without fear** — stopping mid-run just interrupts it; the engine is
+  resumable, so you continue exactly where you left off.
+
+See [UI_GUIDE.md](UI_GUIDE.md) for a full walkthrough.
+
 ## ⚙️ How It Works
 
 Swappy runs a staged pipeline:
@@ -197,10 +226,11 @@ Swappy is built around a few deliberate guarantees:
 
 ## 📋 Requirements
 
-- Windows-oriented environment
+- Windows, macOS, or Linux (Windows-first, but the engine runs on POSIX too)
 - Python 3.11+
 - Two existing source roots on distinct volumes
 - Sparse-file support on both relevant volumes for the low-space fallback path
+- For the desktop GUI only: Tkinter (bundled on Windows/macOS; `python3-tk` on Linux)
 
 NTFS supports sparse files. exFAT does not.
 

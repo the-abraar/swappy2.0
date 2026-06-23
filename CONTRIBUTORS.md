@@ -95,7 +95,7 @@ If no pending file fits on either side, `src/swap/sparse.py` advances one sparse
 
 ### Top-level flow
 
-- `src/swap/cli.py`: argparse entry point. Defines `run`, `resume`, `status`, and `rollback`.
+- `src/swap/cli.py`: argparse entry point. Defines `run`, `resume`, `status`, `rollback`, plus `gui` and `tui` which launch the front-ends.
 - `src/swap/pipeline.py`: forward stage driver. Best first file to read.
 - `src/swap/rollback.py`: reverse path. Reuses the same transfer machinery through a mirrored session.
 
@@ -122,6 +122,27 @@ If no pending file fits on either side, `src/swap/sparse.py` advances one sparse
 
 - `src/swap/progress.py`: thread-safe live progress facade, persisted snapshots, worker state, and recent completion history.
 
+### User interfaces (front-ends)
+
+The GUI and TUI never import the engine's internals. They are thin views over a
+shared kit and stay fully decoupled:
+
+- `src/swap/uikit.py`: the shared, toolkit-agnostic layer. `SwapConfig` +
+  command builders, `SwapProcess` (runs `python -m swap …` as a subprocess with
+  non-blocking log capture and safe cancel), `ProgressReader` (opens `swap.db`
+  **read-only** and returns a flattened `UiSnapshot` with fraction/rate/ETA), and
+  the byte/rate/time formatters. This is the only UI code with unit tests
+  (`tests/test_uikit.py`).
+- `src/swap/tui.py`: interactive terminal dashboard. Standard library only
+  (ANSI), so it runs anywhere including over SSH.
+- `src/swap/gui.py`: desktop window built on Tkinter (standard library; no paid
+  dependency). Polls `ProgressReader` from the Tk event loop via `after()`.
+
+Design rule for front-ends: **put logic in `uikit.py` (testable) and keep
+`tui.py`/`gui.py` as rendering + event wiring.** Because both run the engine as a
+subprocess and read state from the DB, a swap survives the UI closing and
+cancel/resume is always safe.
+
 ### Tests
 
 - `tests/conftest.py`: fake-drive helpers and session builders used across the suite.
@@ -133,6 +154,7 @@ If no pending file fits on either side, `src/swap/sparse.py` advances one sparse
 - `tests/test_rollback.py`: rollback invariants and restoration flow.
 - `tests/test_progress.py`: progress accounting and persistence.
 - `tests/test_winfs.py`: Windows filesystem helpers.
+- `tests/test_uikit.py`: UI kit — config validation, command building, formatters, and read-only progress polling against a real completed session.
 
 ## Important Invariants
 

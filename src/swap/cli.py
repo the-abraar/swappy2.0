@@ -22,6 +22,16 @@ _SIZE_UNITS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3}
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    # UI front-ends don't operate on a fixed work dir up front.
+    if args.command == "gui":
+        from . import gui
+        return gui.main()
+    if args.command == "tui":
+        from . import tui
+        tui_args = ["--work-dir", args.work_dir] if getattr(args, "work_dir", None) else None
+        return tui.main(tui_args)
+
     db = Database(Path(args.work_dir) / "swap.db")
     try:
         if args.command == "run":
@@ -115,6 +125,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
     status = commands.add_parser("status", help="show progress")
     status.add_argument("--work-dir", required=True)
+
+    commands.add_parser("gui", help="launch the desktop GUI (Tkinter)")
+
+    tui_cmd = commands.add_parser("tui", help="launch the interactive terminal UI")
+    tui_cmd.add_argument("--work-dir", help="open an existing session directly")
 
     args = parser.parse_args(argv)
     if getattr(args, "command", None) == "run" and args.workers <= 0:
