@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Callable
 
 try:
     import tkinter as tk
@@ -144,17 +145,19 @@ class SwappyGUI:
         self.var_verify = tk.BooleanVar(value=True)
         self.var_sim = tk.BooleanVar(value=False)
 
-        def field(col: int, label: str, widget: tk.Widget) -> None:
+        # The widget must be a child of its holder: `adv` is grid-managed, so
+        # packing a child of `adv` raises TclError.
+        def field(col: int, label: str, make: Callable[[ttk.Frame], tk.Widget]) -> None:
             holder = ttk.Frame(adv, style="Card.TFrame")
             holder.grid(row=0, column=col, sticky="w", padx=(0, 18), pady=2)
             ttk.Label(holder, text=label, style="Muted.TLabel").pack(anchor="w")
-            widget.pack(anchor="w")
+            make(holder).pack(anchor="w")
 
-        field(0, "Chunk size", ttk.Entry(adv, textvariable=self.var_chunk, width=10))
-        field(1, "Safety margin", ttk.Entry(adv, textvariable=self.var_margin, width=10))
-        field(2, "Workers", ttk.Spinbox(adv, from_=1, to=64, textvariable=self.var_workers, width=6))
-        field(3, "Backend", ttk.Combobox(adv, textvariable=self.var_backend, width=9,
-                                          state="readonly", values=list(uikit.BACKENDS)))
+        field(0, "Chunk size", lambda p: ttk.Entry(p, textvariable=self.var_chunk, width=10))
+        field(1, "Safety margin", lambda p: ttk.Entry(p, textvariable=self.var_margin, width=10))
+        field(2, "Workers", lambda p: ttk.Spinbox(p, from_=1, to=64, textvariable=self.var_workers, width=6))
+        field(3, "Backend", lambda p: ttk.Combobox(p, textvariable=self.var_backend, width=9,
+                                                    state="readonly", values=list(uikit.BACKENDS)))
         checks = ttk.Frame(adv, style="Card.TFrame")
         checks.grid(row=1, column=0, columnspan=4, sticky="w", pady=(8, 0))
         ttk.Checkbutton(checks, text="Verify chunks (SHA-256)",
