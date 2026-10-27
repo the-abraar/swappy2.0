@@ -141,3 +141,17 @@ def test_progress_reader_reads_completed_session(tmp_path):
     assert snap.is_finished is True
     assert snap.counts.get("done", 0) == 2
     assert 0.0 <= snap.fraction <= 1.0
+
+
+def test_tui_subcommand_without_work_dir_does_not_reparse_sys_argv():
+    """`swap tui` must hand tui.main an explicit [] (None re-reads sys.argv, which holds 'tui')."""
+    from swap import cli, tui
+
+    seen = []
+    original = tui.main
+    tui.main = lambda argv=None: seen.append(argv) or 0
+    try:
+        assert cli.main(["tui"]) == 0
+    finally:
+        tui.main = original
+    assert seen == [[]]

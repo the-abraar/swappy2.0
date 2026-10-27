@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
         return gui.main()
     if args.command == "tui":
         from . import tui
-        tui_args = ["--work-dir", args.work_dir] if getattr(args, "work_dir", None) else None
+        tui_args = ["--work-dir", args.work_dir] if getattr(args, "work_dir", None) else []
         return tui.main(tui_args)
 
     db = Database(Path(args.work_dir) / "swap.db")
