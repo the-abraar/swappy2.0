@@ -419,6 +419,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="swap tui", description="Swappy terminal UI")
     parser.add_argument("--work-dir", help="jump straight to an existing session")
     args = parser.parse_args(argv)
+    # Redirected output on Windows is cp1252, which can't encode the box glyphs.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     _enable_ansi()
     try:
         if args.work_dir:
