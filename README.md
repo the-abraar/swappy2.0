@@ -10,7 +10,7 @@
   <a href="#"><img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows / macOS / Linux"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="#"><img src="https://img.shields.io/badge/UI-CLI%20%C2%B7%20TUI%20%C2%B7%20GUI-00d4ff?style=for-the-badge" alt="CLI / TUI / GUI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://github.com/the-abraar/swappy2.0/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-16A34A?style=for-the-badge" alt="MIT License"></a>
   <a href="#"><img src="https://img.shields.io/badge/recovery-resumable-16A34A?style=for-the-badge" alt="Resumable"></a>
 </p>
 
@@ -22,8 +22,6 @@
 </div>
 
 ---
-
-## Overview
 
 ## ✨ Overview
 
@@ -109,11 +107,13 @@ Swappy is for the cases where none of that is true.
 
 ## ⚡ Quick Start
 
-Install in editable mode:
+Install from PyPI:
 
 ```bash
-python -m pip install -e .
+python -m pip install swappy2
 ```
+
+Or, from a clone, in editable mode: `python -m pip install -e .`
 
 Start a new swap:
 
@@ -139,8 +139,8 @@ Roll back a partial swap:
 python -m swap rollback --work-dir D:\.swap_work
 ```
 
-> The product name is **Swappy**, but the current Python package and CLI module
-> name are still `swap`.
+> The product name is **Swappy** and the PyPI distribution is `swappy2`, but the
+> Python package and CLI module are still named `swap`.
 
 ## 🖥️ Three ways to use it
 
@@ -168,7 +168,7 @@ Key things the UIs do for you:
 - **Cancel without fear** — stopping mid-run just interrupts it; the engine is
   resumable, so you continue exactly where you left off.
 
-See [UI_GUIDE.md](UI_GUIDE.md) for a full walkthrough.
+See [UI_GUIDE.md](https://github.com/the-abraar/swappy2.0/blob/main/UI_GUIDE.md) for a full walkthrough.
 
 ## ⚙️ How It Works
 
@@ -288,7 +288,7 @@ Run the test suite with:
 python pytest.py -q
 ```
 
-Contributor-oriented architecture notes live in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+Contributor-oriented architecture notes live in [CONTRIBUTORS.md](https://github.com/the-abraar/swappy2.0/blob/main/CONTRIBUTORS.md).
 
 ## 🗂️ Project Notes
 
@@ -297,4 +297,4 @@ Contributor-oriented architecture notes live in [CONTRIBUTORS.md](CONTRIBUTORS.m
 - Pipeline driver: `src/swap/pipeline.py`
 - Durable state: `src/swap/db.py`
 
-If you are contributing, start with [CONTRIBUTORS.md](CONTRIBUTORS.md).
+If you are contributing, start with [CONTRIBUTORS.md](https://github.com/the-abraar/swappy2.0/blob/main/CONTRIBUTORS.md).

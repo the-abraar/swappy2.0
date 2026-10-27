@@ -18,3 +18,7 @@
 .swap_work/
 .swap_staged_a/
 .swap_staged_b/
+
+# Internal notes and editor config, kept local
+/agent_files/
+/.vscode/

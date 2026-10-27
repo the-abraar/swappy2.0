@@ -84,15 +84,12 @@ python -m swap tui                # TUI dashboard
 python -m swap run --folder-a D:\A --folder-b E:\B --work-dir D:\.swap_work
 ```
 
-## Cleanups to consider before pushing
+## Cleanups (done 2026-10-28)
 
-- **Update placeholder URLs** in `pyproject.toml` (`your-org`) to your real
-  repository before publishing to PyPI.
-- **Don't commit generated files.** `.gitignore` now covers them, but if a
-  previous commit tracked any, untrack once:
-  `git rm -r --cached swap.egg-info venv __pycache__` (ignore errors for ones
-  that aren't tracked).
-- **Decide on `agent_files/`** (internal planning notes) and `.vscode/launch.json`
-  — fine to keep, but you may not want them in a public repo.
-- Optional: the package/module is still named `swap` while the product is
-  **Swappy**; renaming is a larger change and was intentionally left alone.
+- URLs in `pyproject.toml` point at `the-abraar/swappy2.0`; the PyPI
+  distribution is `swappy2` (`swap` and `swappy` are taken). The import
+  package and CLI module are still `swap`.
+- `agent_files/` and `.vscode/` are untracked and ignored (they remain in git
+  history).
+- `.github/workflows/windows-smoke.yml` does a real cross-drive swap, a TUI
+  swap back, and a GUI launch + screenshot on `windows-latest`.

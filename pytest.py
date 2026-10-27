@@ -267,7 +267,7 @@ def _resolve_fixture(
         return cache[name]
 
     if name == "tmp_path":
-        value = Path(tempfile.mkdtemp(prefix="swap-tests-"))
+        value = Path(tempfile.mkdtemp(prefix="swap-tests-")).resolve()  # macOS: /var is a symlink to /private/var
         cache[name] = value
         return value
 
