@@ -1,0 +1,121 @@
+name: Windows smoke
+
+# A real swap on Windows: build + install the wheel, run the tests, swap two
+# folders across two small NTFS volumes (tight on space, so the sparse engine
+# runs), swap them back through the TUI, then launch the GUI and screenshot it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build, twine check, install the wheel
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+          python -m pip install (Get-ChildItem dist/*.whl).FullName
+          swap --help
+
+      - name: Test suite
+        run: python pytest.py -q
+
+      - name: Create two 128 MB NTFS volumes (X:, Y:)
+        run: |
+          foreach ($l in 'X', 'Y') {
+            $vhd = "$env:RUNNER_TEMP\swap_$l.vhdx"
+            @(
+              "create vdisk file=`"$vhd`" maximum=128 type=expandable"
+              "select vdisk file=`"$vhd`""
+              "attach vdisk"
+              "create partition primary"
+              "format fs=ntfs quick label=SWAP$l"
+              "assign letter=$l"
+            ) | Set-Content "$env:RUNNER_TEMP\dp_$l.txt"
+            diskpart /s "$env:RUNNER_TEMP\dp_$l.txt"
+            if ($LASTEXITCODE) { throw "diskpart failed for $l" }
+          }
+          Get-Volume -DriveLetter X, Y | Format-Table DriveLetter, FileSystem, Size, SizeRemaining
+
+      - name: Make test folders X:\A and Y:\B
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python .github/smoke.py make X:\A "$env:RUNNER_TEMP\A.json" 50
+          python .github/smoke.py make Y:\B "$env:RUNNER_TEMP\B.json" 45
+          Get-Volume -DriveLetter X, Y | Format-Table DriveLetter, SizeRemaining
+
+      - name: Real swap via CLI (python -m swap run)
+        run: python -m swap run --folder-a X:\A --folder-b Y:\B --work-dir "$env:RUNNER_TEMP\work1" --chunk-size 4MB --safety-margin 8MB
+
+      - name: python -m swap status
+        run: python -m swap status --work-dir "$env:RUNNER_TEMP\work1"
+
+      - name: Verify contents swapped drives (X:\B, Y:\A)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python .github/smoke.py verify X:\B "$env:RUNNER_TEMP\B.json"
+          python .github/smoke.py verify Y:\A "$env:RUNNER_TEMP\A.json"
+          if (Test-Path X:\A, Y:\B, X:\.swap_staged_a, Y:\.swap_staged_b) { throw "leftover folders" }
+
+      - name: TUI status on the finished session (python -m swap tui)
+        run: |
+          @('3', '5') | python -m swap tui --work-dir "$env:RUNNER_TEMP\work1"
+          if ($LASTEXITCODE) { throw "tui exited $LASTEXITCODE" }
+
+      - name: Swap back through the TUI (scripted prompts)
+        run: |
+          # New swap, A=X:\B, B=Y:\A, work dir, advanced: chunk 4MB, margin 8MB,
+          # default workers/backend/verify, start, then quit.
+          @('1', 'X:\B', 'Y:\A', "$env:RUNNER_TEMP\work2", 'y', '4MB', '8MB', '', '', '', '', '3') |
+            python -m swap tui
+          if ($LASTEXITCODE) { throw "tui exited $LASTEXITCODE" }
+          python -m swap status --work-dir "$env:RUNNER_TEMP\work2"
+
+      - name: Verify original layout restored (X:\A, Y:\B)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python .github/smoke.py verify X:\A "$env:RUNNER_TEMP\A.json"
+          python .github/smoke.py verify Y:\B "$env:RUNNER_TEMP\B.json"
+
+      - name: Launch GUI (python -m swap gui), screenshot, close
+        run: |
+          $p = Start-Process python -ArgumentList '-m', 'swap', 'gui' -PassThru `
+            -RedirectStandardError "$env:RUNNER_TEMP\gui_err.txt"
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) {
+            Get-Content "$env:RUNNER_TEMP\gui_err.txt"
+            throw "GUI exited early with code $($p.ExitCode)"
+          }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$env:RUNNER_TEMP\gui.png")
+          Stop-Process -Id $p.Id
+          Write-Host "GUI stayed up 10 s; screenshot saved"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-smoke
+          path: |
+            ${{ runner.temp }}/gui.png
+            ${{ runner.temp }}/gui_err.txt
+            ${{ runner.temp }}/work1/swap.db
+            ${{ runner.temp }}/work2/swap.db
+          if-no-files-found: ignore
