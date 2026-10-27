@@ -70,7 +70,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           python .github/smoke.py verify X:\B "$env:RUNNER_TEMP\B.json"
           python .github/smoke.py verify Y:\A "$env:RUNNER_TEMP\A.json"
-          if (Test-Path X:\A, Y:\B, X:\.swap_staged_a, Y:\.swap_staged_b) { throw "leftover folders" }
+          if ((Test-Path X:\A, Y:\B, X:\.swap_staged_a, Y:\.swap_staged_b) -contains $true) { throw "leftover folders" }
 
       - name: TUI status on the finished session (python -m swap tui)
         run: |
