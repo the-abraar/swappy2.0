@@ -43,11 +43,12 @@ def test_chunk_write_allocates_only_written_clusters(tmp_path):
     if not winfs.volume_supports_sparse(tmp_path):
         return
     p = tmp_path / "chunked.bin"
-    size = 10 * 1024 * 1024
+    # APFS zero-fills holes under ~16 MB in front of a write, so keep the hole large.
+    size = 64 * 1024 * 1024
     chunk = 1024 * 1024
     winfs.create_sparse_file(p, size)
     with open(p, "r+b") as f:
-        f.seek(5 * chunk)
+        f.seek(32 * chunk)
         f.write(b"x" * chunk)
         f.flush()
         os.fsync(f.fileno())
