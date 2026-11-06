@@ -96,7 +96,11 @@ def parse_size(text: str) -> int:
     match = _SIZE_PATTERN.match(text.strip())
     if match is None:
         raise SystemExit(f"invalid size: {text!r} (expected e.g. 64MB)")
-    return int(match.group(1)) * _SIZE_UNITS[(match.group(2) or "B").upper()]
+    try:
+        value = int(match.group(1))
+    except ValueError:
+        raise SystemExit("invalid size: integer is too large") from None
+    return value * _SIZE_UNITS[(match.group(2) or "B").upper()]
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
