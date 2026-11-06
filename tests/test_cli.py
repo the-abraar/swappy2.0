@@ -98,3 +98,30 @@ def test_ui_validates_safety_margin_and_allows_zero(tmp_path):
     assert "Safety margin must be a valid size." in cfg.validate()
     cfg.safety_margin = "0"
     assert cfg.validate() == []
+
+def test_oversized_size_is_rejected_by_cli_and_ui(tmp_path):
+    """Huge numeric strings must produce validation errors, not ValueError."""
+    get_limit = getattr(sys, "get_int_max_str_digits", None)
+    if get_limit is None or get_limit() == 0:
+        return  # Python versions without the integer conversion limit
+    oversized = "9" * (get_limit() + 1)
+    assert_exits_with_message(lambda: cli.parse_size(oversized), "invalid size")
+
+    folder_a = tmp_path / "a"
+    folder_b = tmp_path / "b"
+    folder_a.mkdir()
+    folder_b.mkdir()
+    work_dir = tmp_path / "work"
+    cfg = uikit.SwapConfig(
+        folder_a=str(folder_a), folder_b=str(folder_b),
+        work_dir=str(work_dir), safety_margin=oversized,
+    )
+    assert "Safety margin must be a valid size." in cfg.validate()
+    assert_exits_with_message(
+        lambda: cli.main([
+            "run", "--folder-a", str(folder_a), "--folder-b", str(folder_b),
+            "--work-dir", str(work_dir), "--safety-margin", oversized,
+        ]),
+        "invalid size",
+    )
+    assert not work_dir.exists()
