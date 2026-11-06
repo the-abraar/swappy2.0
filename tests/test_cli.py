@@ -1,58 +1,65 @@
-"""Regression tests for CLI size parsing and preflight validation."""
+"""Regression tests for CLI size parsing and preflight validation.
+
+Written for the project's lightweight pytest.py runner (no parametrize or raises).
+"""
 
 import sys
 from pathlib import Path
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from swap import cli, uikit
 
 
-@pytest.mark.parametrize("value, expected", [
-    ("0", 0),
-    ("12", 12),
-    ("12B", 12),
-    ("2KB", 2 * 1024),
-    ("3MB", 3 * 1024**2),
-    ("1GB", 1024**3),
-    (" 2 kb ", 2 * 1024),
-    ("4mb", 4 * 1024**2),
-])
-def test_parse_size_valid(value, expected):
-    assert cli.parse_size(value) == expected
+def assert_exits_with_message(callback, message):
+    try:
+        callback()
+    except SystemExit as exc:
+        assert message in str(exc), str(exc)
+    else:
+        raise AssertionError(f"expected SystemExit containing {message!r}")
 
 
-@pytest.mark.parametrize("value", ["", "-1", "1.5GB", "abc", "1TB", "12XB"])
-def test_parse_size_invalid(value):
-    with pytest.raises(SystemExit, match="invalid size"):
-        cli.parse_size(value)
+def test_parse_size_valid():
+    cases = [
+        ("0", 0), ("12", 12), ("12B", 12),
+        ("2KB", 2 * 1024), ("3MB", 3 * 1024**2),
+        ("1GB", 1024**3), (" 2 kb ", 2 * 1024),
+        ("4mb", 4 * 1024**2),
+    ]
+    for value, expected in cases:
+        assert cli.parse_size(value) == expected
 
 
-@pytest.mark.parametrize("value", ["0", "0KB", "0MB", "0GB"])
-def test_run_rejects_zero_chunk_size_before_creating_work_dir(tmp_path, value):
-    work_dir = tmp_path / "work"
-    with pytest.raises(SystemExit, match="--chunk-size must be greater than 0"):
-        cli.main([
-            "run", "--folder-a", str(tmp_path / "a"),
-            "--folder-b", str(tmp_path / "b"),
-            "--work-dir", str(work_dir), "--chunk-size", value,
-        ])
-    assert not work_dir.exists()
+def test_parse_size_invalid():
+    for value in ("", "-1", "1.5GB", "abc", "1TB", "12XB"):
+        assert_exits_with_message(lambda value=value: cli.parse_size(value), "invalid size")
 
 
-@pytest.mark.parametrize("value", ["0", "0KB", "0MB"])
-def test_ui_rejects_zero_chunk_size(tmp_path, value):
+def test_run_rejects_zero_chunk_size_before_creating_work_dir(tmp_path):
+    for value in ("0", "0KB", "0MB", "0GB"):
+        work_dir = tmp_path / ("work-" + value)
+        def run():
+            cli.main([
+                "run", "--folder-a", str(tmp_path / "a"),
+                "--folder-b", str(tmp_path / "b"),
+                "--work-dir", str(work_dir), "--chunk-size", value,
+            ])
+        assert_exits_with_message(run, "--chunk-size must be greater than 0")
+        assert not work_dir.exists()
+
+
+def test_ui_rejects_zero_chunk_size(tmp_path):
     a = tmp_path / "a"
     b = tmp_path / "b"
     a.mkdir()
     b.mkdir()
-    cfg = uikit.SwapConfig(
-        folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"),
-        chunk_size=value,
-    )
-    assert "--chunk-size must be greater than 0" in cfg.validate()
+    for value in ("0", "0KB", "0MB"):
+        cfg = uikit.SwapConfig(
+            folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"),
+            chunk_size=value,
+        )
+        assert "--chunk-size must be greater than 0" in cfg.validate()
 
 
 def test_ui_rejects_invalid_chunk_size(tmp_path):
@@ -65,3 +72,29 @@ def test_ui_rejects_invalid_chunk_size(tmp_path):
         chunk_size="not-a-size",
     )
     assert "Chunk size must be a valid size." in cfg.validate()
+
+
+def test_run_rejects_invalid_safety_margin_before_creating_work_dir(tmp_path):
+    work_dir = tmp_path / "work"
+    def run():
+        cli.main([
+            "run", "--folder-a", str(tmp_path / "a"),
+            "--folder-b", str(tmp_path / "b"),
+            "--work-dir", str(work_dir), "--safety-margin", "invalid",
+        ])
+    assert_exits_with_message(run, "invalid size")
+    assert not work_dir.exists()
+
+
+def test_ui_validates_safety_margin_and_allows_zero(tmp_path):
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    cfg = uikit.SwapConfig(
+        folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"),
+        safety_margin="invalid",
+    )
+    assert "Safety margin must be a valid size." in cfg.validate()
+    cfg.safety_margin = "0"
+    assert cfg.validate() == []
