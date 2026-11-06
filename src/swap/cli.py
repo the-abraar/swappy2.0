@@ -137,4 +137,5 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             raise SystemExit("--workers must be at least 1")
         if parse_size(args.chunk_size) <= 0:
             raise SystemExit("--chunk-size must be greater than 0")
+        parse_size(args.safety_margin)
     return args
