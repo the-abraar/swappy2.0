@@ -83,6 +83,13 @@ class SwapConfig:
                     problems.append("Folder A and Folder B must be different.")
             except OSError:
                 pass
+        from .cli import parse_size
+
+        try:
+            if parse_size(self.chunk_size) <= 0:
+                problems.append("--chunk-size must be greater than 0")
+        except SystemExit:
+            problems.append("Chunk size must be a valid size.")
         if self.workers < 1:
             problems.append("Workers must be at least 1.")
         if self.backend not in BACKENDS:
