@@ -132,6 +132,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     tui_cmd.add_argument("--work-dir", help="open an existing session directly")
 
     args = parser.parse_args(argv)
-    if getattr(args, "command", None) == "run" and args.workers <= 0:
-        raise SystemExit("--workers must be at least 1")
+    if getattr(args, "command", None) == "run":
+        if args.workers <= 0:
+            raise SystemExit("--workers must be at least 1")
+        if parse_size(args.chunk_size) <= 0:
+            raise SystemExit("--chunk-size must be greater than 0")
     return args
