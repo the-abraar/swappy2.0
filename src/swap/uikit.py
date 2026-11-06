@@ -90,6 +90,10 @@ class SwapConfig:
                 problems.append("--chunk-size must be greater than 0")
         except SystemExit:
             problems.append("Chunk size must be a valid size.")
+        try:
+            parse_size(self.safety_margin)
+        except SystemExit:
+            problems.append("Safety margin must be a valid size.")
         if self.workers < 1:
             problems.append("Workers must be at least 1.")
         if self.backend not in BACKENDS:
