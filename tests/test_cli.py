@@ -125,3 +125,36 @@ def test_oversized_size_is_rejected_by_cli_and_ui(tmp_path):
         "invalid size",
     )
     assert not work_dir.exists()
+
+
+def test_sqlite_size_limit_for_chunk_and_safety_margin(tmp_path):
+    """Both CLI size options must fit SQLite signed 64-bit integers."""
+    limit = 2**63 - 1
+    assert cli.parse_size(str(limit)) == limit
+    assert cli.parse_size("8796093022207KB") == 8796093022207 * 1024
+    for value in (str(limit + 1), "8796093022208KB", "8589934592GB"):
+        assert_exits_with_message(lambda value=value: cli.parse_size(value), "invalid size")
+
+        for option in ("--chunk-size", "--safety-margin"):
+            work_dir = tmp_path / ("work-" + option[2:] + "-" + str(len(value)))
+            assert_exits_with_message(
+                lambda option=option, value=value, work_dir=work_dir: cli.main([
+                    "run", "--folder-a", str(tmp_path / "a"),
+                    "--folder-b", str(tmp_path / "b"),
+                    "--work-dir", str(work_dir), option, value,
+                ]),
+                "invalid size",
+            )
+            assert not work_dir.exists()
+
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    for field, message in (
+        ("chunk_size", "Chunk size must be a valid size."),
+        ("safety_margin", "Safety margin must be a valid size."),
+    ):
+        cfg = uikit.SwapConfig(folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"))
+        setattr(cfg, field, str(limit + 1))
+        assert message in cfg.validate()
