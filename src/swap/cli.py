@@ -100,7 +100,10 @@ def parse_size(text: str) -> int:
         value = int(match.group(1))
     except ValueError:
         raise SystemExit("invalid size: integer is too large") from None
-    return value * _SIZE_UNITS[(match.group(2) or "B").upper()]
+    value *= _SIZE_UNITS[(match.group(2) or "B").upper()]
+    if value > 2**63 - 1:
+        raise SystemExit("invalid size: integer is too large")
+    return value
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
