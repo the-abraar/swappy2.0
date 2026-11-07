@@ -131,8 +131,8 @@ def test_sqlite_size_limit_for_chunk_and_safety_margin(tmp_path):
     """Both CLI size options must fit SQLite signed 64-bit integers."""
     limit = 2**63 - 1
     assert cli.parse_size(str(limit)) == limit
-    assert cli.parse_size("8796093022207KB") == 8796093022207 * 1024
-    for value in (str(limit + 1), "8796093022208KB", "8589934592GB"):
+    assert cli.parse_size("9007199254740991KB") == 9007199254740991 * 1024
+    for value in (str(limit + 1), "9007199254740992KB", "8589934592GB"):
         assert_exits_with_message(lambda value=value: cli.parse_size(value), "invalid size")
 
         for option in ("--chunk-size", "--safety-margin"):
