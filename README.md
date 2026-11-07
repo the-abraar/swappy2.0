@@ -107,13 +107,15 @@ Swappy is for the cases where none of that is true.
 
 ## ⚡ Quick Start
 
-Install from PyPI:
+Install straight from GitHub:
 
 ```bash
-python -m pip install swappy2
+python -m pip install "git+https://github.com/the-abraar/swappy2.0"
 ```
 
 Or, from a clone, in editable mode: `python -m pip install -e .`
+
+A PyPI release is planned but not published yet.
 
 Start a new swap:
 
