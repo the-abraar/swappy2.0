@@ -206,7 +206,8 @@ Swappy always prefers the fast path first:
 
 - pick a whole file that fits;
 - copy it durably;
-- delete the source only after the destination is safe.
+- delete the source only after the destination is fsynced and its BLAKE2b
+  hash matches the source's.
 
 If nothing fits on either side, it does not give up. Instead it switches to a
 sparse round-robin strategy that moves one chunk at a time in each direction
