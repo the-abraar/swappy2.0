@@ -350,3 +350,62 @@ def test_legacy_robocopy_backend_resumes_on_winapi(tmp_path):
     assert legacy_session.dst_path(entry).read_bytes() == data
     assert result.history.backend == "winapi"
     db.close()
+
+
+def _flip_middle_byte(path: Path) -> None:
+    data = bytearray(path.read_bytes())
+    data[len(data) // 2] ^= 0xFF
+    path.write_bytes(bytes(data))
+
+
+def _assert_corrupt_copy_keeps_source(session, entry, data: bytes) -> None:
+    try:
+        copier.copy_file(session, entry, worker_id=1)
+    except RuntimeError as exc:
+        assert "hash" in str(exc)
+    else:
+        raise AssertionError("corrupt copy was accepted")
+    assert session.src_path(entry).read_bytes() == data
+
+
+def test_python_copy_keeps_source_when_destination_corrupted(tmp_path):
+    """A same-size but different destination must never cost us the source."""
+    db, session, drives = _setup_scanned_session(tmp_path, worker_count=1)
+    data = bytes(range(256)) * 64
+    entry = _insert_file_entry(db, session, side="A", rel_path="flip.bin", data=data)
+
+    original_fsync = copier.winfs.fsync_file
+
+    def corrupting_fsync(path):
+        _flip_middle_byte(path)
+        original_fsync(path)
+
+    copier.winfs.fsync_file = corrupting_fsync
+    try:
+        _assert_corrupt_copy_keeps_source(session, entry, data)
+    finally:
+        copier.winfs.fsync_file = original_fsync
+        db.close()
+
+
+def test_winapi_copy_keeps_source_when_destination_corrupted(tmp_path):
+    """Same guard on the kernel-copy path (CopyFileExW faked so it runs anywhere)."""
+    import shutil
+
+    db, session, drives = _setup_scanned_session(tmp_path, worker_count=1)
+    data = bytes(range(256)) * 64
+    entry = _insert_file_entry(db, session, side="A", rel_path="flip.bin", data=data)
+    winapi_session = _make_winapi_session(db, session)
+
+    original_copy = copier.winfs.copy_file_with_progress
+
+    def corrupting_copy(src, dst, on_progress):
+        shutil.copyfile(src, dst)
+        _flip_middle_byte(dst)
+
+    copier.winfs.copy_file_with_progress = corrupting_copy
+    try:
+        _assert_corrupt_copy_keeps_source(winapi_session, entry, data)
+    finally:
+        copier.winfs.copy_file_with_progress = original_copy
+        db.close()
