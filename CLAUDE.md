@@ -9,10 +9,9 @@ Windows-first CLI that swaps two large folder trees across drives, even when fre
 ## Commands
 
 ```text
-python pytest.py -q                          # full test suite via the repo's pytest shim
-python pytest.py tests/test_sparse.py -q     # single test file
-python -m pytest tests -q                    # real pytest also works
-python -m pip install -e .                   # editable install
+python -m pip install -e ".[dev]"            # editable install + pytest
+python -m pytest -q                          # full test suite
+python -m pytest tests/test_sparse.py -q     # single test file
 
 python -m swap run      --folder-a D:\A --folder-b E:\B --work-dir D:\.swap_work
 python -m swap resume   --work-dir D:\.swap_work
@@ -24,7 +23,7 @@ CLI flags for `run`: `--chunk-size` (default 64MB), `--safety-margin` (default 6
 
 `rollback` (`rollback.py`) undoes a partially-completed swap and is itself crash-safe/resumable (re-run `swap rollback`; `resume` refuses while stage is `rolling_back`/`rolled_back`). It refuses once stage=='done'. Stages branch `staged|scanned|transferred → rolling_back → rolled_back` (`db.begin_rollback` flips entry states + stage in one transaction; under rollback, `pending` = move back, `done` = nothing to undo). The reverse transfer is the forward machinery run on a MIRRORED session (staged/final roots swapped pairwise), so scheduler + sparse engine crash-safety applies symmetrically. In-flight `sparse` files are first drained forward (paired `sparse.advance_round` loops, NOT single-file drains — one-directional chunks aren't space-neutral) because a half-moved sparse pair can't be reversed without chunk bookkeeping; the partial-destination sweep hard-refuses while one exists.
 
-Note: `pytest.py` at the repo root is a minimal pytest-shim runner (real pytest is not required). It shadows the `pytest` module for anything imported from the repo root. The shim only supports: function-level conftest fixtures, `tmp_path`, `-q`, `-m markexpr`, path args, and `pytest.mark.*`. Don't use parametrize, classes, or plugins in tests.
+Tests run under standard pytest (`[tool.pytest.ini_options]` in `pyproject.toml` puts `src/` on the path and registers the `perf` marker). CI runs them on Ubuntu, Windows and macOS × Python 3.11–3.13.
 
 There is no linter or formatter configured — match surrounding file style. Style: 4-space indent, snake_case, frozen dataclasses, explicit type hints, short orientation docstrings.
 

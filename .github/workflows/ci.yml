@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
@@ -23,19 +23,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package
-        run: python -m pip install -e .
+      - name: Install package with dev extras
+        run: python -m pip install -e ".[dev]"
 
       - name: Byte-compile all modules (incl. GUI/TUI)
         run: python -m compileall -q src
 
-      - name: Run test suite (repo shim)
-        run: python pytest.py -q
-
-      - name: Run test suite (real pytest)
-        run: |
-          python -m pip install pytest
-          python -m pytest -q
+      - name: Run test suite
+        run: python -m pytest -q
 
       - name: Smoke-test CLI and UI wiring
         run: |
