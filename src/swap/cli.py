@@ -93,6 +93,7 @@ def _simulated_volume_id(path: Path) -> object:
 
 
 def parse_size(text: str) -> int:
+    """Parse a byte size while enforcing SQLite's signed 64-bit limit."""
     match = _SIZE_PATTERN.match(text.strip())
     if match is None:
         raise SystemExit(f"invalid size: {text!r} (expected e.g. 64MB)")
