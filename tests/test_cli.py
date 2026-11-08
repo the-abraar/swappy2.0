@@ -12,6 +12,7 @@ from swap import cli, uikit
 
 
 def assert_exits_with_message(callback, message):
+    """Assert that a callback aborts with the expected validation message."""
     try:
         callback()
     except SystemExit as exc:
@@ -21,6 +22,7 @@ def assert_exits_with_message(callback, message):
 
 
 def test_parse_size_valid():
+    """Accept supported units, whitespace, and mixed-case suffixes."""
     cases = [
         ("0", 0), ("12", 12), ("12B", 12),
         ("2KB", 2 * 1024), ("3MB", 3 * 1024**2),
@@ -32,14 +34,17 @@ def test_parse_size_valid():
 
 
 def test_parse_size_invalid():
+    """Reject malformed size values and unsupported units."""
     for value in ("", "-1", "1.5GB", "abc", "1TB", "12XB"):
         assert_exits_with_message(lambda value=value: cli.parse_size(value), "invalid size")
 
 
 def test_run_rejects_zero_chunk_size_before_creating_work_dir(tmp_path):
+    """Reject zero chunk sizes without creating swap state on disk."""
     for value in ("0", "0KB", "0MB", "0GB"):
         work_dir = tmp_path / ("work-" + value)
         def run():
+            """Invoke the CLI with the current zero chunk size."""
             cli.main([
                 "run", "--folder-a", str(tmp_path / "a"),
                 "--folder-b", str(tmp_path / "b"),
@@ -50,6 +55,7 @@ def test_run_rejects_zero_chunk_size_before_creating_work_dir(tmp_path):
 
 
 def test_ui_rejects_zero_chunk_size(tmp_path):
+    """Report nonpositive chunk sizes during UI validation."""
     a = tmp_path / "a"
     b = tmp_path / "b"
     a.mkdir()
@@ -63,6 +69,7 @@ def test_ui_rejects_zero_chunk_size(tmp_path):
 
 
 def test_ui_rejects_invalid_chunk_size(tmp_path):
+    """Report an invalid chunk-size string during UI validation."""
     a = tmp_path / "a"
     b = tmp_path / "b"
     a.mkdir()
@@ -75,8 +82,10 @@ def test_ui_rejects_invalid_chunk_size(tmp_path):
 
 
 def test_run_rejects_invalid_safety_margin_before_creating_work_dir(tmp_path):
+    """Reject invalid safety margins before creating swap state."""
     work_dir = tmp_path / "work"
     def run():
+        """Invoke the CLI with a malformed safety margin."""
         cli.main([
             "run", "--folder-a", str(tmp_path / "a"),
             "--folder-b", str(tmp_path / "b"),
@@ -87,6 +96,7 @@ def test_run_rejects_invalid_safety_margin_before_creating_work_dir(tmp_path):
 
 
 def test_ui_validates_safety_margin_and_allows_zero(tmp_path):
+    """Reject malformed safety margins but permit a zero margin."""
     a = tmp_path / "a"
     b = tmp_path / "b"
     a.mkdir()
