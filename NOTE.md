@@ -49,8 +49,9 @@ Removed/repurposed: `swap_ui.py` is now a thin shim to `swap.gui`;
 - Added `LICENSE` (MIT) and richer `pyproject.toml` metadata, plus console
   scripts `swap-gui` and `swap-tui`. Version bumped to `0.1.0`.
 - Refreshed `README.md`, `UI_GUIDE.md`, `CONTRIBUTORS.md`.
-- Added `.github/workflows/ci.yml` (Ubuntu + Windows × Python 3.11–3.13:
-  byte-compile, run tests with both the shim and real pytest, smoke-test the CLI).
+- Added `.github/workflows/ci.yml` (Ubuntu + Windows + macOS × Python 3.11–3.13:
+  byte-compile, run the tests with pytest, smoke-test the CLI). The old
+  `pytest.py` shim is gone; `pip install -e ".[dev]"` brings in pytest.
 - Expanded `.gitignore` (venv, build artifacts, `*.db`, work/staged dirs).
 
 ## Will it work on Windows?

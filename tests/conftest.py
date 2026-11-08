@@ -2,19 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-# Make 'swap' importable from src/
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import pytest  # noqa: E402  (the shim from the repo root)
-from swap.db import Database, Session  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# built-in fixture: tmp_path is provided by the shim; no need to define it
-# ---------------------------------------------------------------------------
+from swap.db import Database, Session  # importable via pythonpath = ["src"] in pyproject.toml
 
 
 class FakeDrives:
@@ -128,9 +118,3 @@ def make_session(
         worker_count=worker_count,
         stage=stage,
     )
-
-
-@pytest.fixture
-def tmp_path():
-    """Override provided by shim — listed here so conftest is self-documenting."""
-    raise RuntimeError("tmp_path should be supplied by the shim")

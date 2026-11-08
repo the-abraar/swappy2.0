@@ -210,5 +210,5 @@ Prefer deriving display state from durable truth on resume rather than persistin
 - The package uses a `src/` layout under `src/swap/`.
 - The project targets Python 3.11+.
 - There is no formatter or linter configured; match surrounding style.
-- Use `python pytest.py -q` for the test suite.
+- Install with `python -m pip install -e ".[dev]"` and run `python -m pytest -q`.
 - Treat generated caches and egg-info directories as build artifacts, not source files.
