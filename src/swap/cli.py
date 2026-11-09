@@ -93,10 +93,18 @@ def _simulated_volume_id(path: Path) -> object:
 
 
 def parse_size(text: str) -> int:
+    """Parse a byte size while enforcing SQLite's signed 64-bit limit."""
     match = _SIZE_PATTERN.match(text.strip())
     if match is None:
         raise SystemExit(f"invalid size: {text!r} (expected e.g. 64MB)")
-    return int(match.group(1)) * _SIZE_UNITS[(match.group(2) or "B").upper()]
+    try:
+        value = int(match.group(1))
+    except ValueError:
+        raise SystemExit("invalid size: integer is too large") from None
+    value *= _SIZE_UNITS[(match.group(2) or "B").upper()]
+    if value > 2**63 - 1:
+        raise SystemExit("invalid size: integer is too large")
+    return value
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -132,6 +140,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     tui_cmd.add_argument("--work-dir", help="open an existing session directly")
 
     args = parser.parse_args(argv)
-    if getattr(args, "command", None) == "run" and args.workers <= 0:
-        raise SystemExit("--workers must be at least 1")
+    if getattr(args, "command", None) == "run":
+        if args.workers <= 0:
+            raise SystemExit("--workers must be at least 1")
+        if parse_size(args.chunk_size) <= 0:
+            raise SystemExit("--chunk-size must be greater than 0")
+        parse_size(args.safety_margin)
     return args
