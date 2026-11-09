@@ -33,7 +33,10 @@ jobs:
           swap --help
 
       - name: Test suite
-        run: python pytest.py -q
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install "pytest>=8"
+          python -m pytest -q
 
       - name: Create two 128 MB NTFS volumes (X:, Y:)
         run: |

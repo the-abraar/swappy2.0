@@ -10,7 +10,7 @@ Tests live in `tests/` and follow the same module split, for example `tests/test
 - `python -m swap run --folder-a D:\A --folder-b E:\B --work-dir D:\.swap_work` starts a swap session.
 - `python -m swap resume --work-dir D:\.swap_work` resumes an interrupted run.
 - `python -m swap status --work-dir D:\.swap_work` prints session progress.
-- `python pytest.py -q` runs the full test suite through the repo's lightweight pytest shim.
+- `python -m pip install -e ".[dev]"` installs pytest; `python -m pytest -q` runs the full test suite.
 
 ## Coding Style & Naming Conventions
 Use Python 3.11+ features already present in the codebase: `Path`, dataclasses, and explicit type hints. Follow the existing style: 4-space indentation, snake_case for functions and modules, CapWords for dataclasses, and short module docstrings where they add orientation. Keep stage logic idempotent and prefer small, single-purpose functions over cross-module coupling. No formatter or linter is configured in `pyproject.toml`, so match the surrounding file style closely.

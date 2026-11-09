@@ -206,7 +206,8 @@ Swappy always prefers the fast path first:
 
 - pick a whole file that fits;
 - copy it durably;
-- delete the source only after the destination is safe.
+- delete the source only after the destination is fsynced and its BLAKE2b
+  hash matches the source's.
 
 If nothing fits on either side, it does not give up. Instead it switches to a
 sparse round-robin strategy that moves one chunk at a time in each direction
@@ -282,11 +283,14 @@ reached the final `done` state.
 
 ## 🛠️ Development
 
-Run the test suite with:
+Install with the dev extra and run the test suite with pytest:
 
 ```bash
-python pytest.py -q
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
+
+CI runs the suite on Ubuntu, Windows and macOS with Python 3.11–3.13.
 
 Contributor-oriented architecture notes live in [CONTRIBUTORS.md](https://github.com/the-abraar/swappy2.0/blob/main/CONTRIBUTORS.md).
 

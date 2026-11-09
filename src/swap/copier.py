@@ -4,7 +4,8 @@ destination drive. Runs on the coordinator's worker threads.
 Lifecycle of one copy (entry.state stays 'pending' until the very end):
     copy src -> dst        (Win32 CopyFileExW on Windows, buffered Python elsewhere)
     fsync dst              (data durable before we destroy the source)
-    verify size
+    verify size + BLAKE2b  (source hash streamed during the copy, or re-read
+                            after a kernel copy; destination re-read after fsync)
     delete src
     mark entry 'done'      (single SQLite write — done by the COORDINATOR
                             when the worker's CopyResult comes back; worker
@@ -19,6 +20,7 @@ run by "source gone but destination complete", which just marks it done.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import time
 from dataclasses import dataclass
@@ -92,11 +94,23 @@ def _recover_completed_copy(
     )
 
 
+def _digest(path: Path) -> bytes:
+    with open(path, "rb") as handle:
+        return hashlib.file_digest(handle, "blake2b").digest()
+
+
+def _verify_hash(src_digest: bytes, dst: Path) -> None:
+    """Raise (so the source is NOT deleted) unless dst holds exactly the source bytes."""
+    if _digest(dst) != src_digest:
+        raise RuntimeError(f"copy verification failed: {dst} hash differs from source")
+
+
 def _python_copy(src: Path, dst: Path, entry: Entry, worker_id: int) -> CopyResult:
     started_at = time.time()
     read_seconds = 0.0
     write_seconds = 0.0
     bytes_copied = 0
+    src_hasher = hashlib.blake2b()
 
     with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
         while True:
@@ -105,6 +119,7 @@ def _python_copy(src: Path, dst: Path, entry: Entry, worker_id: int) -> CopyResu
             read_seconds += time.perf_counter() - read_started
             if not block:
                 break
+            src_hasher.update(block)
 
             write_started = time.perf_counter()
             fdst.write(block)
@@ -129,11 +144,12 @@ def _python_copy(src: Path, dst: Path, entry: Entry, worker_id: int) -> CopyResu
 
     verify_started = time.perf_counter()
     dst_size = dst.stat().st_size
-    verify_seconds = time.perf_counter() - verify_started
     if dst_size != entry.size:
         raise RuntimeError(
             f"copy verification failed: {dst} is {dst_size} bytes, expected {entry.size}"
         )
+    _verify_hash(src_hasher.digest(), dst)
+    verify_seconds = time.perf_counter() - verify_started
 
     finished_at = time.time()
     duration = max(finished_at - started_at, 0.0)
@@ -185,11 +201,12 @@ def _winapi_copy(src: Path, dst: Path, entry: Entry, worker_id: int) -> CopyResu
 
     verify_started = time.perf_counter()
     dst_size = dst.stat().st_size
-    verify_seconds = time.perf_counter() - verify_started
     if dst_size != entry.size:
         raise RuntimeError(
             f"copy verification failed: {dst} is {dst_size} bytes, expected {entry.size}"
         )
+    _verify_hash(_digest(src), dst)
+    verify_seconds = time.perf_counter() - verify_started
 
     finished_at = time.time()
     duration = max(finished_at - started_at, 0.0)

@@ -19,6 +19,7 @@ classifiers = [
   "Environment :: Console",
   "Intended Audience :: End Users/Desktop",
   "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
   "Operating System :: POSIX",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.11",
@@ -27,6 +28,9 @@ classifiers = [
   "Topic :: System :: Filesystems",
   "Topic :: Utilities",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.urls]
 Homepage = "https://github.com/the-abraar/swappy2.0"
