@@ -1,170 +1,96 @@
-"""Regression tests for CLI size parsing and preflight validation.
+"""Regression tests for CLI size parsing and run-argument validation."""
 
-Written for the project's lightweight pytest.py runner (no parametrize or raises).
-"""
+from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import pytest
 
 from swap import cli, uikit
 
-
-def assert_exits_with_message(callback, message):
-    """Assert that a callback aborts with the expected validation message."""
-    try:
-        callback()
-    except SystemExit as exc:
-        assert message in str(exc), str(exc)
-    else:
-        raise AssertionError(f"expected SystemExit containing {message!r}")
+SQLITE_MAX = 2**63 - 1
 
 
-def test_parse_size_valid():
-    """Accept supported units, whitespace, and mixed-case suffixes."""
-    cases = [
-        ("0", 0), ("12", 12), ("12B", 12),
-        ("2KB", 2 * 1024), ("3MB", 3 * 1024**2),
-        ("1GB", 1024**3), (" 2 kb ", 2 * 1024),
-        ("4mb", 4 * 1024**2),
-    ]
-    for value, expected in cases:
-        assert cli.parse_size(value) == expected
+def _run(tmp_path, work_dir, *extra):
+    cli.main([
+        "run", "--folder-a", str(tmp_path / "a"),
+        "--folder-b", str(tmp_path / "b"),
+        "--work-dir", str(work_dir), *extra,
+    ])
 
 
-def test_parse_size_invalid():
-    """Reject malformed size values and unsupported units."""
-    for value in ("", "-1", "1.5GB", "abc", "1TB", "12XB"):
-        assert_exits_with_message(lambda value=value: cli.parse_size(value), "invalid size")
-
-
-def test_run_rejects_zero_chunk_size_before_creating_work_dir(tmp_path):
-    """Reject zero chunk sizes without creating swap state on disk."""
-    for value in ("0", "0KB", "0MB", "0GB"):
-        work_dir = tmp_path / ("work-" + value)
-        def run():
-            """Invoke the CLI with the current zero chunk size."""
-            cli.main([
-                "run", "--folder-a", str(tmp_path / "a"),
-                "--folder-b", str(tmp_path / "b"),
-                "--work-dir", str(work_dir), "--chunk-size", value,
-            ])
-        assert_exits_with_message(run, "--chunk-size must be greater than 0")
-        assert not work_dir.exists()
-
-
-def test_ui_rejects_zero_chunk_size(tmp_path):
-    """Report nonpositive chunk sizes during UI validation."""
-    a = tmp_path / "a"
-    b = tmp_path / "b"
-    a.mkdir()
-    b.mkdir()
-    for value in ("0", "0KB", "0MB"):
-        cfg = uikit.SwapConfig(
-            folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"),
-            chunk_size=value,
-        )
-        assert "--chunk-size must be greater than 0" in cfg.validate()
-
-
-def test_ui_rejects_invalid_chunk_size(tmp_path):
-    """Report an invalid chunk-size string during UI validation."""
-    a = tmp_path / "a"
-    b = tmp_path / "b"
-    a.mkdir()
-    b.mkdir()
-    cfg = uikit.SwapConfig(
-        folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"),
-        chunk_size="not-a-size",
+@pytest.fixture
+def cfg(tmp_path):
+    """A UI config whose folders exist, so only size fields can fail."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    return uikit.SwapConfig(
+        folder_a=str(tmp_path / "a"), folder_b=str(tmp_path / "b"),
+        work_dir=str(tmp_path / "work"),
     )
-    assert "Chunk size must be a valid size." in cfg.validate()
 
 
-def test_run_rejects_invalid_safety_margin_before_creating_work_dir(tmp_path):
-    """Reject invalid safety margins before creating swap state."""
+@pytest.mark.parametrize(("text", "expected"), [
+    ("0", 0), ("12", 12), ("12B", 12),
+    ("2KB", 2 * 1024), ("3MB", 3 * 1024**2), ("1GB", 1024**3),
+    (" 2 kb ", 2 * 1024), ("4mb", 4 * 1024**2),
+    (str(SQLITE_MAX), SQLITE_MAX),
+    ("9007199254740991KB", 9007199254740991 * 1024),
+])
+def test_parse_size_valid(text, expected):
+    assert cli.parse_size(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "", "-1", "1.5GB", "abc", "1TB", "12XB",
+    str(SQLITE_MAX + 1), "9007199254740992KB", "8589934592GB",
+])
+def test_parse_size_invalid(text):
+    with pytest.raises(SystemExit, match="invalid size"):
+        cli.parse_size(text)
+
+
+def test_parse_size_rejects_digits_over_int_conversion_limit():
+    limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+    if limit == 0:
+        pytest.skip("no integer string-conversion limit on this Python")
+    with pytest.raises(SystemExit, match="invalid size"):
+        cli.parse_size("9" * (limit + 1))
+
+
+@pytest.mark.parametrize("value", ["0", "0KB", "0MB", "0GB"])
+def test_run_rejects_zero_chunk_size_before_creating_work_dir(tmp_path, value):
     work_dir = tmp_path / "work"
-    def run():
-        """Invoke the CLI with a malformed safety margin."""
-        cli.main([
-            "run", "--folder-a", str(tmp_path / "a"),
-            "--folder-b", str(tmp_path / "b"),
-            "--work-dir", str(work_dir), "--safety-margin", "invalid",
-        ])
-    assert_exits_with_message(run, "invalid size")
+    with pytest.raises(SystemExit, match="--chunk-size must be greater than 0"):
+        _run(tmp_path, work_dir, "--chunk-size", value)
     assert not work_dir.exists()
 
 
-def test_ui_validates_safety_margin_and_allows_zero(tmp_path):
-    """Reject malformed safety margins but permit a zero margin."""
-    a = tmp_path / "a"
-    b = tmp_path / "b"
-    a.mkdir()
-    b.mkdir()
-    cfg = uikit.SwapConfig(
-        folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"),
-        safety_margin="invalid",
-    )
-    assert "Safety margin must be a valid size." in cfg.validate()
+@pytest.mark.parametrize("option", ["--chunk-size", "--safety-margin"])
+@pytest.mark.parametrize("value", ["invalid", str(SQLITE_MAX + 1), "8589934592GB"])
+def test_run_rejects_bad_size_before_creating_work_dir(tmp_path, option, value):
+    work_dir = tmp_path / "work"
+    with pytest.raises(SystemExit, match="invalid size"):
+        _run(tmp_path, work_dir, option, value)
+    assert not work_dir.exists()
+
+
+@pytest.mark.parametrize("value", ["0", "0KB", "0MB"])
+def test_ui_rejects_zero_chunk_size(cfg, value):
+    cfg.chunk_size = value
+    assert "Chunk size must be greater than 0." in cfg.validate()
+
+
+@pytest.mark.parametrize(("field", "message"), [
+    ("chunk_size", "Chunk size must be a valid size."),
+    ("safety_margin", "Safety margin must be a valid size."),
+])
+@pytest.mark.parametrize("value", ["not-a-size", str(SQLITE_MAX + 1)])
+def test_ui_rejects_invalid_size(cfg, field, message, value):
+    setattr(cfg, field, value)
+    assert message in cfg.validate()
+
+
+def test_ui_allows_zero_safety_margin(cfg):
     cfg.safety_margin = "0"
     assert cfg.validate() == []
-
-def test_oversized_size_is_rejected_by_cli_and_ui(tmp_path):
-    """Huge numeric strings must produce validation errors, not ValueError."""
-    get_limit = getattr(sys, "get_int_max_str_digits", None)
-    if get_limit is None or get_limit() == 0:
-        return  # Python versions without the integer conversion limit
-    oversized = "9" * (get_limit() + 1)
-    assert_exits_with_message(lambda: cli.parse_size(oversized), "invalid size")
-
-    folder_a = tmp_path / "a"
-    folder_b = tmp_path / "b"
-    folder_a.mkdir()
-    folder_b.mkdir()
-    work_dir = tmp_path / "work"
-    cfg = uikit.SwapConfig(
-        folder_a=str(folder_a), folder_b=str(folder_b),
-        work_dir=str(work_dir), safety_margin=oversized,
-    )
-    assert "Safety margin must be a valid size." in cfg.validate()
-    assert_exits_with_message(
-        lambda: cli.main([
-            "run", "--folder-a", str(folder_a), "--folder-b", str(folder_b),
-            "--work-dir", str(work_dir), "--safety-margin", oversized,
-        ]),
-        "invalid size",
-    )
-    assert not work_dir.exists()
-
-
-def test_sqlite_size_limit_for_chunk_and_safety_margin(tmp_path):
-    """Both CLI size options must fit SQLite signed 64-bit integers."""
-    limit = 2**63 - 1
-    assert cli.parse_size(str(limit)) == limit
-    assert cli.parse_size("9007199254740991KB") == 9007199254740991 * 1024
-    for value in (str(limit + 1), "9007199254740992KB", "8589934592GB"):
-        assert_exits_with_message(lambda value=value: cli.parse_size(value), "invalid size")
-
-        for option in ("--chunk-size", "--safety-margin"):
-            work_dir = tmp_path / ("work-" + option[2:] + "-" + str(len(value)))
-            assert_exits_with_message(
-                lambda option=option, value=value, work_dir=work_dir: cli.main([
-                    "run", "--folder-a", str(tmp_path / "a"),
-                    "--folder-b", str(tmp_path / "b"),
-                    "--work-dir", str(work_dir), option, value,
-                ]),
-                "invalid size",
-            )
-            assert not work_dir.exists()
-
-    a = tmp_path / "a"
-    b = tmp_path / "b"
-    a.mkdir()
-    b.mkdir()
-    for field, message in (
-        ("chunk_size", "Chunk size must be a valid size."),
-        ("safety_margin", "Safety margin must be a valid size."),
-    ):
-        cfg = uikit.SwapConfig(folder_a=str(a), folder_b=str(b), work_dir=str(tmp_path / "work"))
-        setattr(cfg, field, str(limit + 1))
-        assert message in cfg.validate()

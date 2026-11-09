@@ -87,7 +87,7 @@ class SwapConfig:
 
         try:
             if parse_size(self.chunk_size) <= 0:
-                problems.append("--chunk-size must be greater than 0")
+                problems.append("Chunk size must be greater than 0.")
         except SystemExit:
             problems.append("Chunk size must be a valid size.")
         try:
