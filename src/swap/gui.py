@@ -55,15 +55,18 @@ class SwappyGUI:
 
         root.title("Swappy — crash-safe folder swap")
         root.configure(bg=BG)
-        root.minsize(820, 640)
+        root.minsize(760, 520)
 
         self._init_style()
+        # Status bar first: pack clips the last-packed widget when the window
+        # is short, and that should be the (expanding) log, not the status line.
+        self._build_statusbar()
         self._build_header()
         self._build_form()
         self._build_actions()
         self._build_progress()
         self._build_log()
-        self._build_statusbar()
+        self._fit_to_screen()
 
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._set_running(False)
@@ -88,6 +91,16 @@ class SwappyGUI:
         style.configure("Sub.TLabel", background=BG, foreground=MUTED)
         style.configure("TEntry", fieldbackground="#262a33", foreground=FG)
         style.configure("TCombobox", fieldbackground="#262a33", foreground=FG)
+        # clam paints a readonly combobox light grey with our light text on top.
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", "#262a33")],
+                  foreground=[("readonly", FG)],
+                  selectbackground=[("readonly", "#262a33")],
+                  selectforeground=[("readonly", FG)],
+                  background=[("readonly", "#2a2f3a")])
+        self.root.option_add("*TCombobox*Listbox.background", "#262a33")
+        self.root.option_add("*TCombobox*Listbox.foreground", FG)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#264653")
         style.configure("TCheckbutton", background=PANEL, foreground=FG)
         style.configure("Accent.TButton", background=ACCENT, foreground="#04222b",
                         font=("Segoe UI", 10, "bold"), padding=8, borderwidth=0)
@@ -106,27 +119,27 @@ class SwappyGUI:
 
     def _build_header(self) -> None:
         bar = ttk.Frame(self.root)
-        bar.pack(fill="x", padx=16, pady=(14, 6))
+        bar.pack(fill="x", padx=16, pady=(10, 2))
         ttk.Label(bar, text="Swappy", style="Header.TLabel").pack(side="left")
         ttk.Label(bar, text="  swap two big folders across drives, safely",
                   style="Sub.TLabel").pack(side="left", padx=8)
 
-    def _card(self, title: str) -> ttk.Frame:
+    def _card(self, title: str, expand: bool = False) -> ttk.Frame:
         wrap = ttk.Frame(self.root, style="TFrame")
-        wrap.pack(fill="x", padx=16, pady=6)
+        wrap.pack(fill="both" if expand else "x", expand=expand, padx=16, pady=4)
         ttk.Label(wrap, text=title, style="Sub.TLabel").pack(anchor="w", pady=(0, 2))
-        card = ttk.Frame(wrap, style="Card.TFrame", padding=12)
-        card.pack(fill="x")
+        card = ttk.Frame(wrap, style="Card.TFrame", padding=(12, 8))
+        card.pack(fill="both", expand=expand)
         return card
 
     def _folder_row(self, parent: ttk.Frame, label: str, row: int) -> tk.StringVar:
         var = tk.StringVar()
         ttk.Label(parent, text=label, style="Card.TLabel", width=12).grid(
-            row=row, column=0, sticky="w", pady=4)
+            row=row, column=0, sticky="w", pady=2)
         entry = ttk.Entry(parent, textvariable=var)
-        entry.grid(row=row, column=1, sticky="ew", padx=6, pady=4)
+        entry.grid(row=row, column=1, sticky="ew", padx=6, pady=2)
         ttk.Button(parent, text="Browse…",
-                   command=lambda: self._browse(var)).grid(row=row, column=2, pady=4)
+                   command=lambda: self._browse(var)).grid(row=row, column=2, pady=2)
         parent.columnconfigure(1, weight=1)
         return var
 
@@ -167,7 +180,7 @@ class SwappyGUI:
 
     def _build_actions(self) -> None:
         bar = ttk.Frame(self.root)
-        bar.pack(fill="x", padx=16, pady=(8, 4))
+        bar.pack(fill="x", padx=16, pady=(6, 2))
         self.btn_run = ttk.Button(bar, text="▶  Run swap", style="Accent.TButton",
                                   command=self._on_run)
         self.btn_run.pack(side="left")
@@ -192,20 +205,26 @@ class SwappyGUI:
 
         self.pbar = ttk.Progressbar(card, style="Swappy.Horizontal.TProgressbar",
                                     maximum=1000, value=0)
-        self.pbar.pack(fill="x", pady=8)
+        self.pbar.pack(fill="x", pady=6)
 
-        self.tree = ttk.Treeview(card, columns=("state", "file", "done", "speed"),
-                                 show="headings", height=6)
+        table = ttk.Frame(card, style="Card.TFrame")
+        table.pack(fill="x")
+        # 4 visible rows + scrollbar: one row per worker (default 8) won't fit 768 px.
+        self.tree = ttk.Treeview(table, columns=("state", "file", "done", "speed"),
+                                 show="headings", height=4)
+        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
         for col, txt, w, anchor in (("state", "State", 90, "w"), ("file", "File", 360, "w"),
                                     ("done", "Done", 110, "e"), ("speed", "Speed", 110, "e")):
             self.tree.heading(col, text=txt)
             self.tree.column(col, width=w, anchor=anchor)
-        self.tree.pack(fill="x")
+        self.tree.pack(side="left", fill="x", expand=True)
 
     def _build_log(self) -> None:
-        card = self._card("Engine log")
-        self.log = tk.Text(card, height=8, bg="#0f1115", fg=MUTED, insertbackground=FG,
-                           relief="flat", font=("Consolas", 9), wrap="none")
+        card = self._card("Engine log", expand=True)
+        self.log = tk.Text(card, height=4, bg="#0f1115", fg=MUTED, insertbackground=FG,
+                           relief="flat", highlightthickness=0, font=("Consolas", 9), wrap="none")
         self.log.pack(fill="both", expand=True)
         self.log.configure(state="disabled")
 
@@ -215,6 +234,12 @@ class SwappyGUI:
         bar.pack(fill="x", side="bottom")
         ttk.Label(bar, textvariable=self.var_status, style="Sub.TLabel").pack(
             side="left", padx=16, pady=6)
+
+    def _fit_to_screen(self) -> None:
+        """Open no taller than the screen minus taskbar and title bar (1024x768 laptops)."""
+        self.root.update_idletasks()
+        height = min(self.root.winfo_reqheight(), self.root.winfo_screenheight() - 100)
+        self.root.geometry(f"{self.root.winfo_reqwidth()}x{height}")
 
     # -- helpers -----------------------------------------------------------
 
