@@ -1,0 +1,197 @@
+{
+ "source": {
+  "run": "https://github.com/the-abraar/swappy2.0/actions/runs/40988697805",
+  "commit": "9297fd7",
+  "runner": "windows-latest, Python 3.12.10",
+  "volumes": "two 128 MB VHDX NTFS volumes, X: and Y:",
+  "artifact_expires": "2027-01-28"
+ },
+ "volume_size": 133099520,
+ "free_empty": 118333440,
+ "free_after_setup": {
+  "X": 54874112,
+  "Y": 60116992
+ },
+ "session": {
+  "folder_a": "X:\\A",
+  "folder_b": "Y:\\B",
+  "chunk_size": 4194304,
+  "safety_margin": 8388608,
+  "worker_count": 8,
+  "backend": "winapi"
+ },
+ "summary": {
+  "total_files": 16,
+  "total_bytes": 121634862,
+  "elapsed_seconds": 0.3419837951660156,
+  "chunk_rounds": 13
+ },
+ "speeds_mbps": {
+  "sparse_mean_per_file": 172.5,
+  "whole_file_mean_per_file": 246.1,
+  "whole_file_wall_clock": 754.1,
+  "overall_wall_clock": 355.7
+ },
+ "files": [
+  {
+   "side": "A",
+   "path": "note.txt",
+   "size": 8,
+   "mode": "whole-file",
+   "worker": 1,
+   "start": 0.0101,
+   "end": 0.0274,
+   "mbps": 0.0
+  },
+  {
+   "side": "A",
+   "path": "sub/deeper0/small0.bin",
+   "size": 524288,
+   "mode": "whole-file",
+   "worker": 2,
+   "start": 0.0101,
+   "end": 0.0282,
+   "mbps": 28.9
+  },
+  {
+   "side": "A",
+   "path": "sub/deeper1/small1.bin",
+   "size": 1048577,
+   "mode": "whole-file",
+   "worker": 3,
+   "start": 0.0116,
+   "end": 0.0295,
+   "mbps": 58.7
+  },
+  {
+   "side": "A",
+   "path": "sub/deeper0/small2.bin",
+   "size": 1572866,
+   "mode": "whole-file",
+   "worker": 4,
+   "start": 0.0121,
+   "end": 0.0302,
+   "mbps": 86.7
+  },
+  {
+   "side": "A",
+   "path": "sub/deeper1/small3.bin",
+   "size": 2097155,
+   "mode": "whole-file",
+   "worker": 5,
+   "start": 0.0136,
+   "end": 0.0282,
+   "mbps": 143.5
+  },
+  {
+   "side": "B",
+   "path": "note.txt",
+   "size": 8,
+   "mode": "whole-file",
+   "worker": 6,
+   "start": 0.0141,
+   "end": 0.0302,
+   "mbps": 0.0
+  },
+  {
+   "side": "B",
+   "path": "sub/deeper0/small0.bin",
+   "size": 524288,
+   "mode": "whole-file",
+   "worker": 7,
+   "start": 0.0141,
+   "end": 0.0302,
+   "mbps": 32.5
+  },
+  {
+   "side": "B",
+   "path": "sub/deeper1/small1.bin",
+   "size": 1048577,
+   "mode": "whole-file",
+   "worker": 8,
+   "start": 0.0154,
+   "end": 0.0333,
+   "mbps": 58.6
+  },
+  {
+   "side": "B",
+   "path": "sub/deeper0/small2.bin",
+   "size": 1572866,
+   "mode": "whole-file",
+   "worker": 1,
+   "start": 0.0302,
+   "end": 0.0353,
+   "mbps": 311.9
+  },
+  {
+   "side": "B",
+   "path": "sub/deeper1/small3.bin",
+   "size": 2097155,
+   "mode": "whole-file",
+   "worker": 2,
+   "start": 0.0312,
+   "end": 0.0373,
+   "mbps": 345.9
+  },
+  {
+   "side": "A",
+   "path": "sub/deeper0/small4.bin",
+   "size": 2621444,
+   "mode": "whole-file",
+   "worker": 5,
+   "start": 0.0312,
+   "end": 0.0373,
+   "mbps": 432.3
+  },
+  {
+   "side": "B",
+   "path": "sub/deeper0/small4.bin",
+   "size": 2621444,
+   "mode": "whole-file",
+   "worker": 4,
+   "start": 0.0333,
+   "end": 0.0373,
+   "mbps": 649.1
+  },
+  {
+   "side": "A",
+   "path": "sub/deeper1/small5.bin",
+   "size": 3145733,
+   "mode": "whole-file",
+   "worker": 3,
+   "start": 0.0333,
+   "end": 0.0393,
+   "mbps": 518.8
+  },
+  {
+   "side": "B",
+   "path": "sub/deeper1/small5.bin",
+   "size": 3145733,
+   "mode": "whole-file",
+   "worker": 6,
+   "start": 0.0353,
+   "end": 0.0393,
+   "mbps": 778.5
+  },
+  {
+   "side": "A",
+   "path": "big.bin",
+   "size": 52428800,
+   "mode": "sparse",
+   "worker": 1,
+   "start": 0.0413,
+   "end": 0.34,
+   "mbps": 175.6
+  },
+  {
+   "side": "B",
+   "path": "big.bin",
+   "size": 47185920,
+   "mode": "sparse",
+   "worker": 1,
+   "start": 0.0497,
+   "end": 0.3282,
+   "mbps": 169.4
+  }
+ ]
+}

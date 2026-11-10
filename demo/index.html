@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swappy swap replay</title>
+<style>
+:root{--bg:#f7f7f5;--panel:#fff;--fg:#1b1d22;--muted:#5d6470;--line:#d9dce1;--a:#1f6fd1;--b:#d9731a;--sys:#b9bec7;--ok:#1d8a4a;--warn:#b7791f;--err:#c0392b}
+@media (prefers-color-scheme:dark){:root{--bg:#15171c;--panel:#1d2027;--fg:#e6e6e6;--muted:#9aa3b2;--line:#333844;--a:#4ea1ff;--b:#ff9d4a;--sys:#4a505c;--ok:#42d977;--warn:#ffc043;--err:#ff5d5d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:920px;margin:0 auto;padding:16px}
+.banner{background:var(--panel);border:1px solid var(--warn);border-left:6px solid var(--warn);padding:10px 14px;border-radius:6px;font-size:14px}
+h1{margin:18px 0 4px;font-size:28px}h2{font-size:18px;margin:26px 0 8px}
+.muted{color:var(--muted)}code,pre{font-family:ui-monospace,Consolas,monospace;font-size:13px}
+pre{background:var(--panel);border:1px solid var(--line);padding:10px;border-radius:6px;overflow-x:auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-top:12px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin:0;padding:0;list-style:none}
+.steps li{flex:1 1 140px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:13px;color:var(--muted)}
+.steps li.on{border-color:var(--a);color:var(--fg);box-shadow:inset 0 -3px 0 var(--a)}
+.steps li.done{color:var(--fg)}.steps b{display:block}
+.drive{margin:12px 0}.drive .lbl{display:flex;justify-content:space-between;font-size:13px}
+.bar{display:flex;height:26px;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--bg);position:relative}
+.bar span{height:100%}.s{background:var(--sys)}.a{background:var(--a)}.b{background:var(--b)}
+.need{position:absolute;top:0;bottom:0;border-left:2px dashed var(--err)}
+.key{font-size:12px;display:flex;gap:14px;flex-wrap:wrap}.key i{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:-1px}
+.ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+button{font:inherit;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+button.primary{background:var(--a);border-color:var(--a);color:#fff}
+input[type=range]{flex:1;min-width:140px}
+#say{min-height:3em;margin-top:8px}
+#crash{display:none;border-color:var(--err);border-left:6px solid var(--err)}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left}
+td.n{text-align:right;font-variant-numeric:tabular-nums}.tbl{overflow-x:auto}
+.st-done{color:var(--ok)}.st-moving{color:var(--a);font-weight:600}.st-pending{color:var(--muted)}
+img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+</style>
+</head>
+<body>
+<main>
+<div class="banner" role="note"><strong>What is real here and what is simulated:</strong> the file sizes, the drive sizes, the per-file start and end times and the speeds all come from a real swap on GitHub's Windows runner (<a href="https://github.com/the-abraar/swappy2.0/actions/runs/40988697805">CI run 40988697805</a>, 2026-10-30, two 128 MB NTFS test volumes). The replay is slowed down: the whole swap took 0.34 s. Only the start and end of each <code>big.bin</code> were recorded, so the chunk-by-chunk progress inside them is interpolated. Steps 1–2 have no recorded timing. The "Crash here" panel describes what <code>swap resume</code> would do, based on the code. No crash was recorded.</div>
+
+<h1>Swappy</h1>
+<p class="muted">This swaps two big folders across two drives, even when neither drive has room for the other folder. The algorithm was designed and first built by <a href="https://github.com/NirobNabil/swappy">Nabil</a>, and this fork is <a href="https://github.com/the-abraar/swappy2.0">the-abraar/swappy2.0</a>.</p>
+<pre>python -m pip install "git+https://github.com/the-abraar/swappy2.0"
+swap run --folder-a D:\A --folder-b E:\B --work-dir D:\.swap_work</pre>
+<p class="muted">Not on PyPI yet. Windows-first, and it also runs on macOS and Linux. Python 3.11+.</p>
+
+<h2>Replay: swap X:\A (63.4 MB) with Y:\B (58.2 MB)</h2>
+<div class="card">
+<ol class="steps" id="steps">
+<li><b>1 Preflight</b>Each drive must fit: free + outgoing − incoming ≥ 8 MiB margin</li>
+<li><b>2 Stage</b>Rename each root aside on its own drive, create empty final roots</li>
+<li><b>3 Whole-file copies</b>8 workers copy, verify, then delete the source</li>
+<li><b>4 Sparse rounds</b>4 MiB tail chunks, one each way per round</li>
+</ol>
+<div class="drive" id="dX"></div>
+<div class="drive" id="dY"></div>
+<div class="key"><span><i class="a"></i>folder A's data</span><span><i class="b"></i>folder B's data</span><span><i class="s"></i>NTFS + other</span><span><i style="border-left:2px dashed var(--err)"></i>the other side's big.bin fits as a whole file only if used space ends left of this line</span></div>
+<div class="ctl"><button class="primary" id="play">Play</button><button id="crashBtn">Crash here</button><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Replay position"><span id="clock" class="muted"></span></div>
+<div id="say"></div>
+<div class="card" id="crash" role="status"></div>
+</div>
+
+<h2>Files</h2>
+<div class="tbl"><table><thead><tr><th>From</th><th>File</th><th>Mode</th><th class="n">Size</th><th>Worker</th><th class="n">MB/s</th><th>State</th></tr></thead><tbody id="files"></tbody></table></div>
+<p class="muted" id="speeds"></p>
+
+<h2>The same run in the GUI and TUI</h2>
+<p class="muted">The GUI as CI screenshotted it at 1024×768. You can see two bugs: the Backend dropdown is unreadable, and the window runs under the taskbar. The terminal UI transcript is in <a href="data/tui.txt">data/tui.txt</a>, and the full timeline is in <a href="data/swap_run.json">data/swap_run.json</a>.</p>
+<img src="img/gui.png" alt="Swappy GUI window on Windows, idle, with Folders, Settings and Progress panels" width="1024" height="768" loading="lazy">
+</main>
+
+<script id="run" type="application/json">{"source":{"run":"https://github.com/the-abraar/swappy2.0/actions/runs/40988697805","commit":"9297fd7","runner":"windows-latest, Python 3.12.10","volumes":"two 128 MB VHDX NTFS volumes, X: and Y:","artifact_expires":"2027-01-28"},"volume_size":133099520,"free_empty":118333440,"free_after_setup":{"X":54874112,"Y":60116992},"session":{"folder_a":"X:\\A","folder_b":"Y:\\B","chunk_size":4194304,"safety_margin":8388608,"worker_count":8,"backend":"winapi"},"summary":{"total_files":16,"total_bytes":121634862,"elapsed_seconds":0.3419837951660156,"chunk_rounds":13},"speeds_mbps":{"sparse_mean_per_file":172.5,"whole_file_mean_per_file":246.1,"whole_file_wall_clock":754.1,"overall_wall_clock":355.7},"files":[{"side":"A","path":"note.txt","size":8,"mode":"whole-file","worker":1,"start":0.0101,"end":0.0274,"mbps":0.0},{"side":"A","path":"sub/deeper0/small0.bin","size":524288,"mode":"whole-file","worker":2,"start":0.0101,"end":0.0282,"mbps":28.9},{"side":"A","path":"sub/deeper1/small1.bin","size":1048577,"mode":"whole-file","worker":3,"start":0.0116,"end":0.0295,"mbps":58.7},{"side":"A","path":"sub/deeper0/small2.bin","size":1572866,"mode":"whole-file","worker":4,"start":0.0121,"end":0.0302,"mbps":86.7},{"side":"A","path":"sub/deeper1/small3.bin","size":2097155,"mode":"whole-file","worker":5,"start":0.0136,"end":0.0282,"mbps":143.5},{"side":"B","path":"note.txt","size":8,"mode":"whole-file","worker":6,"start":0.0141,"end":0.0302,"mbps":0.0},{"side":"B","path":"sub/deeper0/small0.bin","size":524288,"mode":"whole-file","worker":7,"start":0.0141,"end":0.0302,"mbps":32.5},{"side":"B","path":"sub/deeper1/small1.bin","size":1048577,"mode":"whole-file","worker":8,"start":0.0154,"end":0.0333,"mbps":58.6},{"side":"B","path":"sub/deeper0/small2.bin","size":1572866,"mode":"whole-file","worker":1,"start":0.0302,"end":0.0353,"mbps":311.9},{"side":"B","path":"sub/deeper1/small3.bin","size":2097155,"mode":"whole-file","worker":2,"start":0.0312,"end":0.0373,"mbps":345.9},{"side":"A","path":"sub/deeper0/small4.bin","size":2621444,"mode":"whole-file","worker":5,"start":0.0312,"end":0.0373,"mbps":432.3},{"side":"B","path":"sub/deeper0/small4.bin","size":2621444,"mode":"whole-file","worker":4,"start":0.0333,"end":0.0373,"mbps":649.1},{"side":"A","path":"sub/deeper1/small5.bin","size":3145733,"mode":"whole-file","worker":3,"start":0.0333,"end":0.0393,"mbps":518.8},{"side":"B","path":"sub/deeper1/small5.bin","size":3145733,"mode":"whole-file","worker":6,"start":0.0353,"end":0.0393,"mbps":778.5},{"side":"A","path":"big.bin","size":52428800,"mode":"sparse","worker":1,"start":0.0413,"end":0.34,"mbps":175.6},{"side":"B","path":"big.bin","size":47185920,"mode":"sparse","worker":1,"start":0.0497,"end":0.3282,"mbps":169.4}]}</script>
+<script>
+const R = JSON.parse(document.getElementById('run').textContent);
+const MB = 1e6, CH = R.session.chunk_size, NEED = R.session.safety_margin + CH;
+const T1 = R.files.filter(f => f.mode === 'sparse').reduce((m, f) => Math.min(m, f.start), 9);
+const TEND = Math.max(...R.files.map(f => f.end));
+// Playback: steps 1-2 get 1.5 s each, whole-file phase 100x slower, sparse phase 20x slower.
+const PH = [[0, 1500, 'pre'], [1500, 3000, 'stage'], [3000, 3000 + T1 * 1e5, 'whole'], [3000 + T1 * 1e5, 3000 + T1 * 1e5 + (TEND - T1) * 2e4, 'sparse']];
+const TOTAL = PH[3][1] + 1500;
+const mb = b => (b / MB).toFixed(1) + ' MB';
+const home = s => s === 'A' ? 'X' : 'Y';
+
+function runTime(ms) {             // playback ms -> seconds since transfer start, and step index
+  if (ms < PH[2][0]) return [0, ms < PH[1][0] ? 0 : 1];
+  if (ms < PH[3][0]) return [(ms - PH[2][0]) / 1e5, 2];
+  if (ms < PH[3][1]) return [T1 + (ms - PH[3][0]) / 2e4, 3];
+  return [TEND, 4];
+}
+function moved(f, t) {             // bytes of f already at its destination at time t
+  if (t <= f.start) return 0;
+  if (t >= f.end) return f.size;
+  const p = (t - f.start) / (f.end - f.start);
+  if (f.mode !== 'sparse') return 0;  // whole-file: dst complete, src deleted, only at the end
+  const n = Math.ceil(f.size / CH);
+  return Math.min(f.size, Math.floor(p * n) * CH);
+}
+function state(t) {
+  const d = {X: {A: 0, B: 0}, Y: {A: 0, B: 0}};
+  for (const f of R.files) {
+    const m = moved(f, t), src = home(f.side), dst = src === 'X' ? 'Y' : 'X';
+    d[src][f.side] += f.size - m; d[dst][f.side] += m;
+  }
+  return d;
+}
+const init = state(0);
+function drive(id, letter, d) {
+  const cap = R.volume_size, sys = cap - R.free_empty;
+  const used0 = init[letter].A + init[letter].B;
+  const free = R.free_after_setup[letter] + used0 - d.A - d.B;
+  const pct = b => (100 * b / cap).toFixed(2) + '%';
+  const big = R.files.find(f => f.mode === 'sparse' && home(f.side) !== letter);
+  const line = 100 * (cap - big.size - NEED) / cap;  // used space must stay left of this for a whole-file big.bin
+  document.getElementById(id).innerHTML =
+    `<div class="lbl"><span><b>${letter}:</b> ${mb(cap)}</span><span>free ${mb(free)}</span></div>
+     <div class="bar"><span class="s" style="width:${pct(sys)}"></span><span class="a" style="width:${pct(d.A)}"></span><span class="b" style="width:${pct(d.B)}"></span>
+     <i class="need" style="left:${line}%"></i></div>`;
+  return free;
+}
+const SAY = [
+  t => `X: free ${mb(R.free_after_setup.X)} + A ${mb(init.X.A)} out − B ${mb(init.Y.B)} in = ${mb(R.free_after_setup.X + init.X.A - init.Y.B)}. Y: ${mb(R.free_after_setup.Y)} + ${mb(init.Y.B)} − ${mb(init.X.A)} = ${mb(R.free_after_setup.Y + init.Y.B - init.X.A)}. Both are ≥ 8 MiB, so the swap is possible.`,
+  t => `X:\\A becomes X:\\.swap_staged_a and Y:\\B becomes Y:\\.swap_staged_b. Each is a rename on its own drive, so it is instant. The scan then writes all 24 entries to swap.db.`,
+  t => `${R.files.filter(f => f.mode !== 'sparse' && f.end <= t).length}/14 small files copied (t = ${(t * 1000).toFixed(1)} ms). Current code hash-checks each copy (BLAKE2b) before it deletes the source. This run predates that fix and only compared sizes. Neither big.bin fits: it would leave ${mb(R.free_after_setup.Y - init.X.A)} free, and a copy needs ${mb(NEED)} (margin + one chunk).`,
+  t => `Deadlock breaker (t = ${(t * 1000).toFixed(0)} ms): write the source's last 4 MiB into a sparse destination at the same offset, fsync, truncate the source, then do the same in the other direction. Free space on each drive moves by at most one chunk. ${R.summary.chunk_rounds} rounds in total.`,
+  t => `Done in ${R.summary.elapsed_seconds.toFixed(2)} s: X:\\ now holds B and Y:\\ holds A. Cleanup removed the empty staged folders.`,
+];
+function crashText(t, step) {
+  if (step === 0) return 'Nothing has changed on disk yet. The session row is at stage "created", so resume just runs preflight again.';
+  if (step === 1) return 'Stage is "created" or "staged". Staging checks which folders already exist and redoes only the missing renames. The scan fully replaces the entries table, so redoing it is safe.';
+  const done = R.files.filter(f => f.end <= t);
+  const inflight = R.files.filter(f => f.start < t && f.end > t);
+  let s = `Stage is "scanned". swap.db marks ${done.length}/16 files done. Resume skips those and requeues the rest.`;
+  for (const f of inflight) s += f.mode === 'sparse'
+    ? ` ${home(f.side)}:\\.swap_staged_${f.side.toLowerCase()}\\big.bin is now ${mb(f.size - moved(f, t))}. Its length is the progress marker, because every chunk is fsynced at the destination before the source is truncated. Resume carries on from the next tail chunk.`
+    : ` ${f.path} (${f.side}) was mid-copy. Its source is still whole, so it is copied again from the start.`;
+  if (step === 4) s = 'Stage is "done". There is nothing to resume, and rollback refuses.';
+  return s;
+}
+let ms = 0, playing = false, last = 0;
+function render() {
+  const [t, step] = runTime(ms), d = state(t);
+  drive('dX', 'X', d.X); drive('dY', 'Y', d.Y);
+  [...document.querySelectorAll('#steps li')].forEach((li, i) => { li.className = i === step ? 'on' : i < step ? 'done' : ''; });
+  document.getElementById('say').textContent = SAY[step](t);
+  document.getElementById('clock').textContent = step >= 2 ? `${(t * 1000).toFixed(1)} ms of ${(TEND * 1000).toFixed(0)}` : 'before transfer';
+  document.getElementById('scrub').value = Math.round(1000 * ms / TOTAL);
+  document.getElementById('files').innerHTML = R.files.map(f => {
+    const st = f.end <= t ? 'done' : f.start < t ? 'moving' : 'pending';
+    return `<tr><td>${home(f.side)}:\\${f.side}</td><td>${f.path}</td><td>${f.mode}</td><td class="n">${mb(f.size)}</td><td>${f.worker}</td><td class="n">${f.size > 8 ? f.mbps : '—'}</td><td class="st-${st}">${st}</td></tr>`;
+  }).join('');
+}
+function tick(now) {
+  if (!playing) return;
+  ms = Math.min(TOTAL, ms + (now - last)); last = now; render();
+  if (ms >= TOTAL) { playing = false; document.getElementById('play').textContent = 'Replay'; return; }
+  requestAnimationFrame(tick);
+}
+function setPlaying(p) {
+  playing = p; document.getElementById('play').textContent = p ? 'Pause' : 'Play';
+  if (p) { if (ms >= TOTAL) ms = 0; document.getElementById('crash').style.display = 'none'; last = performance.now(); requestAnimationFrame(tick); }
+}
+document.getElementById('play').onclick = () => setPlaying(!playing);
+document.getElementById('crashBtn').onclick = () => {
+  setPlaying(false); const [t, step] = runTime(ms), c = document.getElementById('crash');
+  c.style.display = 'block'; c.textContent = 'Simulated power cut. ' + crashText(t, step) + ' Press Play to resume.';
+};
+document.getElementById('scrub').oninput = e => { setPlaying(false); ms = TOTAL * e.target.value / 1000; render(); };
+const S = R.speeds_mbps;
+document.getElementById('speeds').textContent = `Per-file average speed: sparse ${S.sparse_mean_per_file} MB/s, whole-file ${S.whole_file_mean_per_file} MB/s (8 workers in parallel move ${S.whole_file_wall_clock} MB/s in total). The whole swap ran at ${S.overall_wall_clock} MB/s. These are tiny volumes on a CI VM, mostly served from cache, so expect a real disk to be slower.`;
+render();
+</script>
+</body>
+</html>
