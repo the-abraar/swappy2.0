@@ -1,3 +1,5 @@
+Frozen until 19 Dec 2026, after one last push (hash fix, real pytest, packaging, GUI fixes, LEARNINGS.md, demo). Call source: `~/Everything/dev/products/decision.md` (labs under the November bet).
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization
